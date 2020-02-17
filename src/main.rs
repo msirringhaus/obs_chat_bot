@@ -1,6 +1,10 @@
+mod build_res;
+
 use config;
 use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
+
+use lapin::{Connection, ConnectionProperties};
 
 fn general_help_func(bot: &ActiveBot, message: &Message, cmd: &str) -> HandleResult {
     let cmd_split: Vec<&str> = cmd.split_whitespace().collect();
@@ -68,6 +72,15 @@ fn main() {
     // Creating the bot
     let mut bot = MatrixBot::new(handler);
 
+    let addr = "amqps://suse:suse@rabbit.suse.de/%2f";
+    let conn = Connection::connect(&addr, ConnectionProperties::default())
+        .wait()
+        .expect("connection error");
+
+    println!("CONNECTED");
+
+    let channel = conn.create_channel().wait().expect("create_channel");
+    build_res::subscribe(&mut bot, channel);
     // Registering all other handlers
     // dice::register_handler(&mut bot, &prefix);
 
