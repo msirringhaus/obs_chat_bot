@@ -1,3 +1,4 @@
+use crate::common::ConnectionDetails;
 use lapin::{
     message::DeliveryResult, options::*, types::FieldTable, Channel, ConsumerDelegate, ExchangeKind,
 };
@@ -6,11 +7,10 @@ use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
 use std::collections::hash_map::HashMap;
-
 use std::sync::{Arc, Mutex};
 
-const KEY_BUILD_SUCCESS: &str = "suse.obs.package.build_success";
-const KEY_BUILD_FAIL: &str = "suse.obs.package.build_fail";
+const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
+const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
 
 #[derive(Deserialize, Debug)]
 struct BuildSuccess {
@@ -35,6 +35,7 @@ struct BuildSuccess {
 
 #[derive(Clone)]
 struct Subscriber {
+    server_details: ConnectionDetails,
     channel: Channel,
     bot: Arc<Mutex<ActiveBot>>,
     subscriptions: Arc<Mutex<HashMap<(String, String), Vec<String>>>>,
@@ -43,8 +44,12 @@ struct Subscriber {
 impl MessageHandler for Subscriber {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
+        // Check if its for me
+        if !message.body.contains(&self.server_details.domain) {
+            return HandleResult::ContinueHandling;
+        }
+
         let parts: Vec<_> = message.body.split("/").collect();
-        println!("Got a message");
         if parts.len() < 2 {
             println!("Message not parsable");
             bot.send_message(
@@ -55,8 +60,8 @@ impl MessageHandler for Subscriber {
             return HandleResult::ContinueHandling;
         }
         let mut iter = parts.iter().rev();
-        let package = iter.next().unwrap().to_string();
-        let project = iter.next().unwrap().to_string();
+        let package = iter.next().unwrap().trim().to_string();
+        let project = iter.next().unwrap().trim().to_string();
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             let key = (project.clone(), package.clone());
             if !subscriptions.contains_key(&key) {
@@ -66,7 +71,10 @@ impl MessageHandler for Subscriber {
                 .get_mut(&key)
                 .unwrap() // We know its in there, we just added it above
                 .push(message.room.to_string());
-            println!("Subscribing room {} to {:?}", message.room, key);
+            println!(
+                "Subscribing room {} to {:?} on {}",
+                message.room, key, &self.server_details.domain
+            );
         } else {
             println!("subscriptions not lockable");
         }
@@ -81,9 +89,9 @@ impl ConsumerDelegate for Subscriber {
             let jsondata: BuildSuccess = serde_json::from_str(data).unwrap();
 
             let build_res;
-            if delivery.routing_key.as_str() == KEY_BUILD_SUCCESS {
+            if delivery.routing_key.as_str().contains("build_success") {
                 build_res = "success";
-            } else if delivery.routing_key.as_str() == KEY_BUILD_FAIL {
+            } else if delivery.routing_key.as_str().contains("build_fail") {
                 build_res = "failed";
             } else {
                 panic!(
@@ -111,10 +119,33 @@ impl ConsumerDelegate for Subscriber {
 
             if let Ok(bot) = self.bot.lock() {
                 for room in rooms {
-                    bot.send_message(
+                    bot.send_html_message(
                         &format!(
-                            "Build {}: {} {} ({})",
-                            build_res, jsondata.project, jsondata.package, jsondata.arch
+                            "Build {}: {}/{} ({} / {})",
+                            build_res,
+                            jsondata.project,
+                            jsondata.package,
+                            jsondata.arch,
+                            jsondata.repository,
+                        ),
+                        &format!(
+                            "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
+                            if build_res == "success" {
+                                build_res.to_string()
+                            } else {
+                                format!("<u>{}</u>", build_res)
+                            },
+                            format!(
+                                "https://{}.{}/package/show/{}/{}",
+                                self.server_details.buildprefix,
+                                self.server_details.domain,
+                                jsondata.project,
+                                jsondata.package,
+                            ),
+                            jsondata.project,
+                            jsondata.package,
+                            jsondata.arch,
+                            jsondata.repository,
                         ),
                         &room,
                         MessageType::TextMessage,
@@ -132,7 +163,7 @@ impl ConsumerDelegate for Subscriber {
     }
 }
 
-pub fn subscribe(bot: &mut MatrixBot, channel: Channel) {
+pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) {
     channel
         .exchange_declare(
             "pubsub",
@@ -159,7 +190,7 @@ pub fn subscribe(bot: &mut MatrixBot, channel: Channel) {
             .queue_bind(
                 &queue.name().to_string(),
                 "pubsub",
-                key,
+                &format!("{}.{}", details.rabbitscope, key),
                 QueueBindOptions::default(),
                 FieldTable::default(),
             )
@@ -176,7 +207,11 @@ pub fn subscribe(bot: &mut MatrixBot, channel: Channel) {
         )
         .wait()
         .expect("basic_consume");
+
+    println!("Subscribing to {}", details.domain);
+
     let sub = Subscriber {
+        server_details: details.clone(),
         channel: channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),

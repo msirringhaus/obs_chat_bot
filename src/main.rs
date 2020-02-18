@@ -1,5 +1,7 @@
 mod build_res;
+mod common;
 
+use common::ConnectionDetails;
 use config;
 use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
@@ -46,6 +48,22 @@ fn general_help_str() -> String {
     message
 }
 
+const SUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
+    domain: "suse.de",
+    login: "suse:suse",
+    buildprefix: "build",
+    rabbitprefix: "rabbit",
+    rabbitscope: "suse",
+};
+
+const OPENSUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
+    domain: "opensuse.org",
+    login: "opensuse:opensuse",
+    buildprefix: "build",
+    rabbitprefix: "rabbit",
+    rabbitscope: "opensuse",
+};
+
 fn main() {
     // ================== Loading credentials ==================
     let mut settings = config::Config::default();
@@ -72,17 +90,23 @@ fn main() {
     // Creating the bot
     let mut bot = MatrixBot::new(handler);
 
-    let addr = "amqps://suse:suse@rabbit.suse.de/%2f";
-    let conn = Connection::connect(&addr, ConnectionProperties::default())
-        .wait()
-        .expect("connection error");
+    for details in [OPENSUSE_CONNECTION, SUSE_CONNECTION].iter() {
+        let addr = format!(
+            "amqps://{login}@{prefix}.{domain}/%2f",
+            login = details.login,
+            prefix = details.rabbitprefix,
+            domain = details.domain
+        );
+        let conn = Connection::connect(&addr, ConnectionProperties::default())
+            .wait()
+            .expect("connection error");
 
-    println!("CONNECTED");
+        println!("CONNECTED TO {}", &addr);
 
-    let channel = conn.create_channel().wait().expect("create_channel");
-    build_res::subscribe(&mut bot, channel);
-    // Registering all other handlers
-    // dice::register_handler(&mut bot, &prefix);
+        let channel = conn.create_channel().wait().expect("create_channel");
+
+        build_res::subscribe(&mut bot, details, channel);
+    }
 
     bot.run(&user, &password, &homeserver_url);
 }
