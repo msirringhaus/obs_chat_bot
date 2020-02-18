@@ -13,28 +13,21 @@ use serde_json;
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
-const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
-const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
+const KEY_REQUEST_CHANGE: &str = "obs.request.change";
+const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
+const KEY_REQUEST_DELETE: &str = "obs.request.delete";
 
 #[derive(Deserialize, Debug)]
-struct BuildSuccess {
-    arch: String,
-    repository: String,
-    package: String,
-    project: String,
-    reason: Option<String>,
-    release: Option<String>,
-    readytime: Option<String>,
-    srcmd5: Option<String>,
-    rev: Option<String>,
-    bcnt: Option<String>,
-    verifymd5: Option<String>,
-    starttime: Option<String>,
-    endtime: Option<String>,
-    workerid: Option<String>,
-    versrel: Option<String>,
-    hostarch: Option<String>,
-    previouslyfailed: Option<String>,
+struct SubmitRequestInfo {
+    state: String,
+    number: i32,
+    author: Option<String>,
+    comment: Option<String>,
+    description: Option<String>,
+    actions: Option<serde_json::Value>,
+    when: Option<String>,
+    who: Option<String>,
+    oldstate: Option<String>,
 }
 
 #[derive(Clone)]
@@ -42,7 +35,7 @@ struct Subscriber {
     server_details: ConnectionDetails,
     channel: Channel,
     bot: Arc<Mutex<ActiveBot>>,
-    subscriptions: Arc<Mutex<HashMap<(String, String), Vec<String>>>>,
+    subscriptions: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 impl MessageHandler for Subscriber {
@@ -51,7 +44,7 @@ impl MessageHandler for Subscriber {
         // Check if its for me
         if !message
             .body
-            .contains(&format!("{}/package/", self.server_details.domain))
+            .contains(&format!("{}/request/", self.server_details.domain))
         {
             return HandleResult::ContinueHandling;
         }
@@ -60,7 +53,7 @@ impl MessageHandler for Subscriber {
         if parts.len() < 3 {
             println!("Message not parsable");
             bot.send_message(
-                "Sorry, I could not parse that. Please post a package-URL",
+                "Sorry, I could not parse that. Please post a submitrequest URL",
                 &message.room,
                 MessageType::TextMessage,
             );
@@ -68,11 +61,10 @@ impl MessageHandler for Subscriber {
         }
         let mut iter = parts.iter().rev();
         // These unwraps cannot fail, as there have to be at least 2 parts
-        let package = iter.next().unwrap().trim().to_string();
-        let project = iter.next().unwrap().trim().to_string();
+        let number = iter.next().unwrap().trim().to_string();
 
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
-            let key = (project.clone(), package.clone());
+            let key = number;
             if !subscriptions.contains_key(&key) {
                 subscriptions.insert(key.clone(), Vec::new());
             }
@@ -99,21 +91,27 @@ impl MessageHandler for Subscriber {
 impl Subscriber {
     fn delivery_wrapper(&self, delivery: Delivery) -> Result<()> {
         let data = std::str::from_utf8(&delivery.data)?;
-        let jsondata: BuildSuccess = serde_json::from_str(data)?;
-
-        let build_res;
-        if delivery.routing_key.as_str().contains("build_success") {
-            build_res = "success";
-        } else if delivery.routing_key.as_str().contains("build_fail") {
-            build_res = "failed";
+        let jsondata: SubmitRequestInfo = serde_json::from_str(data)?;
+        let changetype;
+        if delivery.routing_key.as_str().contains(KEY_REQUEST_CHANGE) {
+            changetype = "changed by admin";
+        } else if delivery
+            .routing_key
+            .as_str()
+            .contains(KEY_REQUEST_STATECHANGE)
+        {
+            changetype = "changed";
+        } else if delivery.routing_key.as_str().contains(KEY_REQUEST_DELETE) {
+            changetype = "deleted";
         } else {
             return Err(anyhow!(
-                "Build event neither success nor failure, but {}",
+                "Changetype of SR event unknown: {}",
                 delivery.routing_key.as_str()
             ));
         }
 
-        let key = (jsondata.project.clone(), jsondata.package.clone());
+        let key = format!("{}", jsondata.number);
+
         let rooms;
         if let Ok(subscriptions) = self.subscriptions.lock() {
             // This is a message we are not subscribed to
@@ -126,40 +124,30 @@ impl Subscriber {
             return Ok(());
         }
 
-        println!(
-            "Build {}: {} {} ({})",
-            build_res, jsondata.project, jsondata.package, jsondata.arch
-        );
+        println!("Request got {}: {}", changetype, jsondata.number);
 
         if let Ok(bot) = self.bot.lock() {
             for room in rooms {
                 bot.send_html_message(
                     &format!(
-                        "Build {}: {}/{} ({} / {})",
-                        build_res,
-                        jsondata.project,
-                        jsondata.package,
-                        jsondata.arch,
-                        jsondata.repository,
+                        "Request {} was {}: {} ({})",
+                        jsondata.number,
+                        changetype,
+                        jsondata.state,
+                        jsondata.comment.as_ref().unwrap_or(&String::new())
                     ),
                     &format!(
-                        "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
-                        if build_res == "success" {
-                            build_res.to_string()
-                        } else {
-                            format!("<u>{}</u>", build_res)
-                        },
+                        "<a href={}>Request {}</a> was {}: <strong>{}</strong> ({})",
                         format!(
-                            "https://{}.{}/package/show/{}/{}",
+                            "https://{}.{}/request/show/{}",
                             self.server_details.buildprefix,
                             self.server_details.domain,
-                            jsondata.project,
-                            jsondata.package,
+                            jsondata.number,
                         ),
-                        jsondata.project,
-                        jsondata.package,
-                        jsondata.arch,
-                        jsondata.repository,
+                        jsondata.number,
+                        changetype,
+                        jsondata.state,
+                        jsondata.comment.as_ref().unwrap_or(&String::new())
                     ),
                     &room,
                     MessageType::TextMessage,
@@ -208,7 +196,13 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
         .queue_declare("", QueueDeclareOptions::default(), FieldTable::default())
         .wait()?;
 
-    for key in [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL].iter() {
+    for key in [
+        KEY_REQUEST_CHANGE,
+        KEY_REQUEST_STATECHANGE,
+        KEY_REQUEST_DELETE,
+    ]
+    .iter()
+    {
         channel
             .queue_bind(
                 &queue.name().to_string(),

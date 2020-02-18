@@ -1,5 +1,6 @@
 mod build_res;
 mod common;
+mod submitrequests;
 
 use anyhow::Result;
 use common::ConnectionDetails;
@@ -102,8 +103,10 @@ fn main() -> Result<()> {
         println!("CONNECTED TO {}", &addr);
 
         let channel = conn.create_channel().wait()?;
-
         build_res::subscribe(&mut bot, details, channel)?;
+
+        let channel = conn.create_channel().wait()?;
+        submitrequests::subscribe(&mut bot, details, channel)?;
     }
 
     bot.run(&user, &password, &homeserver_url);
