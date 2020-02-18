@@ -1,17 +1,14 @@
-use crate::common::ConnectionDetails;
+use crate::common::{ConnectionDetails, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
     options::*,
-    types::FieldTable,
-    Channel, ConsumerDelegate, ExchangeKind,
+    Channel, ConsumerDelegate,
 };
 use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
-use std::collections::hash_map::HashMap;
-use std::sync::{Arc, Mutex};
 
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
@@ -37,15 +34,7 @@ struct BuildSuccess {
     previouslyfailed: Option<String>,
 }
 
-#[derive(Clone)]
-struct Subscriber {
-    server_details: ConnectionDetails,
-    channel: Channel,
-    bot: Arc<Mutex<ActiveBot>>,
-    subscriptions: Arc<Mutex<HashMap<(String, String), Vec<String>>>>,
-}
-
-impl MessageHandler for Subscriber {
+impl MessageHandler for Subscriber<(String, String)> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
         // Check if its for me
@@ -71,40 +60,21 @@ impl MessageHandler for Subscriber {
         let package = iter.next().unwrap().trim().to_string();
         let project = iter.next().unwrap().trim().to_string();
 
-        if let Ok(mut subscriptions) = self.subscriptions.lock() {
-            let key = (project.clone(), package.clone());
-            if !subscriptions.contains_key(&key) {
-                subscriptions.insert(key.clone(), Vec::new());
-            }
-            subscriptions
-                .get_mut(&key)
-                .unwrap() // We know its in there, we just added it above
-                .push(message.room.to_string());
-            println!(
-                "Subscribing room {} to {:?} on {}",
-                message.room, key, &self.server_details.domain
-            );
-        } else {
-            println!("subscriptions not lockable");
-            bot.send_message(
-                "Sorry, I could not add your request to the subscriptions, due to an internal error.",
-                &message.room,
-                MessageType::TextMessage,
-            );
-        }
+        let key = (project.clone(), package.clone());
+        self.add_to_subscriptions(key, bot, &message.room);
         HandleResult::ContinueHandling
     }
 }
 
-impl Subscriber {
+impl Subscriber<(String, String)> {
     fn delivery_wrapper(&self, delivery: Delivery) -> Result<()> {
         let data = std::str::from_utf8(&delivery.data)?;
         let jsondata: BuildSuccess = serde_json::from_str(data)?;
 
         let build_res;
-        if delivery.routing_key.as_str().contains("build_success") {
-            build_res = "success";
-        } else if delivery.routing_key.as_str().contains("build_fail") {
+        if delivery.routing_key.as_str().contains(KEY_BUILD_SUCCESS) {
+            build_res = "succeeded";
+        } else if delivery.routing_key.as_str().contains(KEY_BUILD_FAIL) {
             build_res = "failed";
         } else {
             return Err(anyhow!(
@@ -175,7 +145,7 @@ impl Subscriber {
     }
 }
 
-impl ConsumerDelegate for Subscriber {
+impl ConsumerDelegate for Subscriber<(String, String)> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
             match self.delivery_wrapper(delivery) {
@@ -189,56 +159,6 @@ impl ConsumerDelegate for Subscriber {
 }
 
 pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) -> Result<()> {
-    channel
-        .exchange_declare(
-            "pubsub",
-            ExchangeKind::Topic,
-            ExchangeDeclareOptions {
-                passive: true,
-                durable: true,
-                auto_delete: true, // deactivate me to survive bot reboots
-                internal: false,
-                nowait: false,
-            },
-            FieldTable::default(),
-        )
-        .wait()?;
-
-    let queue = channel
-        .queue_declare("", QueueDeclareOptions::default(), FieldTable::default())
-        .wait()?;
-
-    for key in [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL].iter() {
-        channel
-            .queue_bind(
-                &queue.name().to_string(),
-                "pubsub",
-                &format!("{}.{}", details.rabbitscope, key),
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
-            .wait()?;
-    }
-
-    let consumer = channel
-        .basic_consume(
-            &queue,
-            "OBS_bot_consumer",
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .wait()?;
-
-    println!("Subscribing to {}", details.domain);
-
-    let sub = Subscriber {
-        server_details: details.clone(),
-        channel: channel,
-        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
-        subscriptions: Arc::new(Mutex::new(HashMap::new())),
-    };
-    bot.add_handler(sub.clone());
-    consumer.set_delegate(Box::new(sub));
-
-    Ok(())
+    let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
+    crate::common::subscribe::<(String, String)>(bot, details, channel, &subnames)
 }
