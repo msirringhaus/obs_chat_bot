@@ -9,6 +9,8 @@ use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
+use std::collections::hash_map::HashMap;
+use std::sync::{Arc, Mutex};
 
 const KEY_REQUEST_CHANGE: &str = "obs.request.change";
 const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
@@ -30,29 +32,15 @@ struct SubmitRequestInfo {
 impl MessageHandler for Subscriber<String> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        // Check if its for me
-        if !message
-            .body
-            .contains(&format!("{}/request/", self.server_details.domain))
-        {
-            return HandleResult::ContinueHandling;
-        }
+        let url = format!("{}/request/", self.server_details.domain);
+        let keyparser = |parts: &Vec<&str>| {
+            let mut iter = parts.iter().rev();
+            // These unwraps cannot fail, as there have to be at least 2 parts
+            let number = iter.next().unwrap().trim().to_string();
+            return number;
+        };
+        self.handle_message_helper(bot, message, &url, 3, Box::new(keyparser));
 
-        let parts: Vec<_> = message.body.split("/").collect();
-        if parts.len() < 3 {
-            println!("Message not parsable");
-            bot.send_message(
-                "Sorry, I could not parse that. Please post a submitrequest URL",
-                &message.room,
-                MessageType::TextMessage,
-            );
-            return HandleResult::ContinueHandling;
-        }
-        let mut iter = parts.iter().rev();
-        // These unwraps cannot fail, as there have to be at least 2 parts
-        let number = iter.next().unwrap().trim().to_string();
-
-        self.add_to_subscriptions(number, bot, &message.room);
         HandleResult::ContinueHandling
     }
 }
@@ -151,5 +139,15 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
         KEY_REQUEST_STATECHANGE,
         KEY_REQUEST_DELETE,
     ];
-    crate::common::subscribe::<String>(bot, details, channel, &subnames)
+    let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
+    let sub: Subscriber<String> = Subscriber {
+        server_details: details.clone(),
+        channel: channel,
+        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
+        subscriptions: Arc::new(Mutex::new(HashMap::new())),
+    };
+    bot.add_handler(sub.clone());
+    consumer.set_delegate(Box::new(sub));
+
+    Ok(())
 }

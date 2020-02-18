@@ -9,6 +9,8 @@ use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
+use std::collections::hash_map::HashMap;
+use std::sync::{Arc, Mutex};
 
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
@@ -37,31 +39,18 @@ struct BuildSuccess {
 impl MessageHandler for Subscriber<(String, String)> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        // Check if its for me
-        if !message
-            .body
-            .contains(&format!("{}/package/", self.server_details.domain))
-        {
-            return HandleResult::ContinueHandling;
-        }
+        let url = format!("{}/package/", self.server_details.domain);
+        let keyparser = |parts: &Vec<&str>| {
+            let mut iter = parts.iter().rev();
+            // These unwraps cannot fail, as there have to be at least 2 parts
+            let package = iter.next().unwrap().trim().to_string();
+            let project = iter.next().unwrap().trim().to_string();
 
-        let parts: Vec<_> = message.body.split("/").collect();
-        if parts.len() < 3 {
-            println!("Message not parsable");
-            bot.send_message(
-                "Sorry, I could not parse that. Please post a package-URL",
-                &message.room,
-                MessageType::TextMessage,
-            );
-            return HandleResult::ContinueHandling;
-        }
-        let mut iter = parts.iter().rev();
-        // These unwraps cannot fail, as there have to be at least 2 parts
-        let package = iter.next().unwrap().trim().to_string();
-        let project = iter.next().unwrap().trim().to_string();
+            let key = (project.clone(), package.clone());
+            return key;
+        };
+        self.handle_message_helper(bot, message, &url, 4, Box::new(keyparser));
 
-        let key = (project.clone(), package.clone());
-        self.add_to_subscriptions(key, bot, &message.room);
         HandleResult::ContinueHandling
     }
 }
@@ -114,7 +103,7 @@ impl Subscriber<(String, String)> {
                     ),
                     &format!(
                         "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
-                        if build_res == "success" {
+                        if build_res == "succeeded" {
                             build_res.to_string()
                         } else {
                             format!("<u>{}</u>", build_res)
@@ -160,5 +149,15 @@ impl ConsumerDelegate for Subscriber<(String, String)> {
 
 pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) -> Result<()> {
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
-    crate::common::subscribe::<(String, String)>(bot, details, channel, &subnames)
+    let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
+    let sub: Subscriber<(String, String)> = Subscriber {
+        server_details: details.clone(),
+        channel: channel,
+        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
+        subscriptions: Arc::new(Mutex::new(HashMap::new())),
+    };
+    bot.add_handler(sub.clone());
+    consumer.set_delegate(Box::new(sub));
+
+    Ok(())
 }

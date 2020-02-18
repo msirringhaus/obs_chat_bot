@@ -1,6 +1,6 @@
 use anyhow::Result;
-use lapin::{options::*, types::FieldTable, Channel, ExchangeKind};
-use matrix_bot_api::{ActiveBot, MatrixBot, MessageType};
+use lapin::{options::*, types::FieldTable, Channel, Consumer, ExchangeKind};
+use matrix_bot_api::{ActiveBot, Message, MessageType};
 use std::collections::hash_map::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -47,17 +47,44 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
             );
         }
     }
+
+    pub fn handle_message_helper(
+        &mut self,
+        bot: &ActiveBot,
+        message: &Message,
+        search_url: &str,
+        min_splits: usize,
+        key_parser_func: Box<dyn Fn(&Vec<&str>) -> T>,
+    ) {
+        for line in message.body.lines() {
+            // Check if its for me
+            if !line.contains(search_url) {
+                continue;
+            }
+
+            let parts: Vec<_> = message.body.split("/").collect();
+            if parts.len() < min_splits {
+                println!("Message not parsable");
+                bot.send_message(
+                    "Sorry, I could not parse that. Please post a submitrequest URL",
+                    &message.room,
+                    MessageType::TextMessage,
+                );
+                continue;
+            }
+
+            let key = key_parser_func(&parts);
+
+            self.add_to_subscriptions(key, bot, &message.room);
+        }
+    }
 }
 
-pub fn subscribe<T>(
-    bot: &mut MatrixBot,
+pub fn subscribe(
     details: &ConnectionDetails,
     channel: Channel,
     subnames: &[&str],
-) -> Result<()>
-where
-    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug,
-{
+) -> Result<(Channel, Consumer)> {
     channel
         .exchange_declare(
             "pubsub",
@@ -100,14 +127,5 @@ where
 
     println!("Subscribing to {}", details.domain);
 
-    let sub: Subscriber<(String, String)> = Subscriber {
-        server_details: details.clone(),
-        channel: channel,
-        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
-        subscriptions: Arc::new(Mutex::new(HashMap::new())),
-    };
-    bot.add_handler(sub.clone());
-    consumer.set_delegate(Box::new(sub));
-
-    Ok(())
+    Ok((channel, consumer))
 }
