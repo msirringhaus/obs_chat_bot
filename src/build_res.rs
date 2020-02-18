@@ -1,6 +1,10 @@
 use crate::common::ConnectionDetails;
+use anyhow::{anyhow, Result};
 use lapin::{
-    message::DeliveryResult, options::*, types::FieldTable, Channel, ConsumerDelegate, ExchangeKind,
+    message::{Delivery, DeliveryResult},
+    options::*,
+    types::FieldTable,
+    Channel, ConsumerDelegate, ExchangeKind,
 };
 use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
@@ -60,8 +64,10 @@ impl MessageHandler for Subscriber {
             return HandleResult::ContinueHandling;
         }
         let mut iter = parts.iter().rev();
+        // These unwraps cannot fail, as there have to be at least 2 parts
         let package = iter.next().unwrap().trim().to_string();
         let project = iter.next().unwrap().trim().to_string();
+
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             let key = (project.clone(), package.clone());
             if !subscriptions.contains_key(&key) {
@@ -82,88 +88,99 @@ impl MessageHandler for Subscriber {
     }
 }
 
+impl Subscriber {
+    fn delivery_wrapper(&self, delivery: Delivery) -> Result<()> {
+        let data = std::str::from_utf8(&delivery.data)?;
+        let jsondata: BuildSuccess = serde_json::from_str(data)?;
+
+        let build_res;
+        if delivery.routing_key.as_str().contains("build_success") {
+            build_res = "success";
+        } else if delivery.routing_key.as_str().contains("build_fail") {
+            build_res = "failed";
+        } else {
+            return Err(anyhow!(
+                "Build event neither success nor failure, but {}",
+                delivery.routing_key.as_str()
+            ));
+        }
+
+        let key = (jsondata.project.clone(), jsondata.package.clone());
+        let rooms;
+        if let Ok(subscriptions) = self.subscriptions.lock() {
+            // This is a message we are not subscribed to
+            if !subscriptions.contains_key(&key) {
+                return Ok(());
+            }
+
+            rooms = subscriptions[&key].clone();
+        } else {
+            return Ok(());
+        }
+
+        println!(
+            "Build {}: {} {} ({})",
+            build_res, jsondata.project, jsondata.package, jsondata.arch
+        );
+
+        if let Ok(bot) = self.bot.lock() {
+            for room in rooms {
+                bot.send_html_message(
+                    &format!(
+                        "Build {}: {}/{} ({} / {})",
+                        build_res,
+                        jsondata.project,
+                        jsondata.package,
+                        jsondata.arch,
+                        jsondata.repository,
+                    ),
+                    &format!(
+                        "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
+                        if build_res == "success" {
+                            build_res.to_string()
+                        } else {
+                            format!("<u>{}</u>", build_res)
+                        },
+                        format!(
+                            "https://{}.{}/package/show/{}/{}",
+                            self.server_details.buildprefix,
+                            self.server_details.domain,
+                            jsondata.project,
+                            jsondata.package,
+                        ),
+                        jsondata.project,
+                        jsondata.package,
+                        jsondata.arch,
+                        jsondata.repository,
+                    ),
+                    &room,
+                    MessageType::TextMessage,
+                );
+            }
+        }
+
+        self.channel
+            .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+            .wait()?;
+
+        Ok(())
+    }
+}
+
 impl ConsumerDelegate for Subscriber {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
-            let data = std::str::from_utf8(&delivery.data).unwrap();
-            let jsondata: BuildSuccess = serde_json::from_str(data).unwrap();
-
-            let build_res;
-            if delivery.routing_key.as_str().contains("build_success") {
-                build_res = "success";
-            } else if delivery.routing_key.as_str().contains("build_fail") {
-                build_res = "failed";
-            } else {
-                panic!(
-                    "Build event neither success nor failure, but {}",
-                    delivery.routing_key.as_str()
-                );
+            match self.delivery_wrapper(delivery) {
+                Ok(_) => {}
+                Err(x) => println!("Error while getting Event: {:?}. Skipping to continue", x),
             }
-
-            let key = (jsondata.project.clone(), jsondata.package.clone());
-            let rooms;
-            if let Ok(subscriptions) = self.subscriptions.lock() {
-                if !subscriptions.contains_key(&key) {
-                    return;
-                }
-
-                rooms = subscriptions[&key].clone();
-            } else {
-                return;
-            }
-
-            println!(
-                "Build {}: {} {} ({})",
-                build_res, jsondata.project, jsondata.package, jsondata.arch
-            );
-
-            if let Ok(bot) = self.bot.lock() {
-                for room in rooms {
-                    bot.send_html_message(
-                        &format!(
-                            "Build {}: {}/{} ({} / {})",
-                            build_res,
-                            jsondata.project,
-                            jsondata.package,
-                            jsondata.arch,
-                            jsondata.repository,
-                        ),
-                        &format!(
-                            "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
-                            if build_res == "success" {
-                                build_res.to_string()
-                            } else {
-                                format!("<u>{}</u>", build_res)
-                            },
-                            format!(
-                                "https://{}.{}/package/show/{}/{}",
-                                self.server_details.buildprefix,
-                                self.server_details.domain,
-                                jsondata.project,
-                                jsondata.package,
-                            ),
-                            jsondata.project,
-                            jsondata.package,
-                            jsondata.arch,
-                            jsondata.repository,
-                        ),
-                        &room,
-                        MessageType::TextMessage,
-                    );
-                }
-            }
-
-            self.channel
-                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
-                .wait()
-                .expect("basic_ack");
         } else {
             println!("Delivery not ok");
         }
     }
 }
 
-pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) {
+pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) -> Result<()> {
     channel
         .exchange_declare(
             "pubsub",
@@ -177,13 +194,11 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
             },
             FieldTable::default(),
         )
-        .wait()
-        .expect("exchange_declare");
+        .wait()?;
 
     let queue = channel
         .queue_declare("", QueueDeclareOptions::default(), FieldTable::default())
-        .wait()
-        .expect("queue_declare");
+        .wait()?;
 
     for key in [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL].iter() {
         channel
@@ -194,8 +209,7 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
                 QueueBindOptions::default(),
                 FieldTable::default(),
             )
-            .wait()
-            .expect("queue_bind");
+            .wait()?;
     }
 
     let consumer = channel
@@ -205,8 +219,7 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
-        .wait()
-        .expect("basic_consume");
+        .wait()?;
 
     println!("Subscribing to {}", details.domain);
 
@@ -218,4 +231,6 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));
+
+    Ok(())
 }

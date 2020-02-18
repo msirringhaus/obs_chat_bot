@@ -68,6 +68,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
+[[package]]
 name = "arrayvec"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -958,6 +963,7 @@ dependencies = [
 name = "obs_chat_bot"
 version = "0.1.0"
 dependencies = [
+ "anyhow 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
  "config 0.9.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "lapin 0.28.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "matrix_bot_api 0.4.0",
@@ -1912,6 +1918,7 @@ dependencies = [
 "checksum amq-protocol-tcp 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7623ad8723830dd9c48372e1d5fde9973ce7c28636267dfcf506bed382e84150"
 "checksum amq-protocol-types 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "a13489ba9891aac7f217c80ef10ead9e0219422d9af826bceb13a84346f75d0f"
 "checksum amq-protocol-uri 3.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "52e68b30bc7968ba7a013083e52d43429b1f253261a2960de6eb0905169e10f4"
+"checksum anyhow 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)" = "7825f6833612eb2414095684fcf6c635becf3ce97fe48cf6421321e93bfbd53c"
 "checksum arrayvec 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)" = "cd9fd44efafa8690358b7408d253adf110036b88f55672a933f01d616ad9b1b9"
 "checksum autocfg 0.1.7 (registry+https://github.com/rust-lang/crates.io-index)" = "1d49d90015b3c36167a20fe2810c5cd875ad504b39cff3d4eae7977e6b7c1cb2"
 "checksum autocfg 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f8aac770f1885fd7e387acedd76065302551364496e46b3dd00860b2f8359b9d"

@@ -1,6 +1,7 @@
 mod build_res;
 mod common;
 
+use anyhow::Result;
 use common::ConnectionDetails;
 use config;
 use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
@@ -64,16 +65,14 @@ const OPENSUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
     rabbitscope: "opensuse",
 };
 
-fn main() {
+fn main() -> Result<()> {
     // ================== Loading credentials ==================
     let mut settings = config::Config::default();
-    settings
-        .merge(config::File::with_name("botconfig"))
-        .unwrap();
+    settings.merge(config::File::with_name("botconfig"))?;
 
-    let user = settings.get_str("user").unwrap();
-    let password = settings.get_str("password").unwrap();
-    let homeserver_url = settings.get_str("homeserver_url").unwrap();
+    let user = settings.get_str("user")?;
+    let password = settings.get_str("password")?;
+    let homeserver_url = settings.get_str("homeserver_url")?;
     // =========================================================
 
     // Defining Prefix - default: "!"
@@ -97,16 +96,17 @@ fn main() {
             prefix = details.rabbitprefix,
             domain = details.domain
         );
-        let conn = Connection::connect(&addr, ConnectionProperties::default())
-            .wait()
-            .expect("connection error");
+
+        let conn = Connection::connect(&addr, ConnectionProperties::default()).wait()?;
 
         println!("CONNECTED TO {}", &addr);
 
-        let channel = conn.create_channel().wait().expect("create_channel");
+        let channel = conn.create_channel().wait()?;
 
-        build_res::subscribe(&mut bot, details, channel);
+        build_res::subscribe(&mut bot, details, channel)?;
     }
 
     bot.run(&user, &password, &homeserver_url);
+
+    Ok(())
 }
