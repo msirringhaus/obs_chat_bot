@@ -25,7 +25,6 @@ pub fn help_str(prefix: Option<&str>) -> String {
         unsub = "unsub OBS_REQUEST_URL - Unsubscribe from a SR/MR. Get no more notifications.",
         list = "list requests - List all requests currently subscribed to.",
     )
-    .to_string()
 }
 
 #[derive(Deserialize, Debug)]
