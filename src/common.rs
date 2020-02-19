@@ -171,7 +171,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
             // Stripping away the prefix
             let line = line[prefix.len()..].trim();
 
-            if line == &format!("list {}s", self.subtype) {
+            if line == format!("list {}s", self.subtype) {
                 self.list_keys(bot, &message.room);
                 continue;
             }
