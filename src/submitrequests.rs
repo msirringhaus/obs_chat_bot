@@ -19,10 +19,11 @@ const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
 
 pub fn help_str(prefix: Option<&str>) -> String {
     format!(
-        "{prefix}{sub}\n{prefix}{unsub}",
+        "{prefix}{sub}\n{prefix}{unsub}\n{prefix}{list}",
         prefix = prefix.unwrap_or(""),
         sub = "OBS_REQUEST_URL - Subscribe to a SR/MR. Get notification if state changes.",
         unsub = "unsub OBS_REQUEST_URL - Unsubscribe from a SR/MR. Get no more notifications.",
+        list = "list requests - List all requests currently subscribed to.",
     )
     .to_string()
 }
@@ -45,14 +46,13 @@ struct SubmitRequestInfo {
 impl MessageHandler for Subscriber<String> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        let url = format!("{}/request/", self.server_details.domain);
         let keyparser = |parts: &Vec<&str>| {
             let mut iter = parts.iter().rev();
             // These unwraps cannot fail, as there have to be at least 2 parts
             let number = iter.next().unwrap().trim().to_string();
             return number;
         };
-        self.handle_message_helper(bot, message, &url, 3, Box::new(keyparser));
+        self.handle_message_helper(bot, message, 3, Box::new(keyparser));
 
         HandleResult::ContinueHandling
     }
@@ -82,10 +82,7 @@ impl Subscriber<String> {
         );
         let html = format!(
             "<a href={}>Request {}</a> was {}. Status <strong>{}</strong> {}",
-            format!(
-                "https://{}.{}/request/show/{}",
-                self.server_details.buildprefix, self.server_details.domain, jsondata.number,
-            ),
+            format!("{}/{}", self.get_base_url(), jsondata.number,),
             jsondata.number,
             changetype,
             jsondata.state,
@@ -180,6 +177,7 @@ pub fn subscribe(
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<String> = Subscriber {
+        subtype: format!("request"),
         server_details: details.clone(),
         channel: channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),

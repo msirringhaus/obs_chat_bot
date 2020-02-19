@@ -1,4 +1,4 @@
-use crate::common::{ConnectionDetails, Subscriber};
+use crate::common::{ConnectionDetails, PackageKey, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
@@ -17,10 +17,11 @@ const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
 
 pub fn help_str(prefix: Option<&str>) -> String {
     format!(
-        "{prefix}{sub}\n{prefix}{unsub}",
+        "{prefix}{sub}\n{prefix}{unsub}\n{prefix}{list}",
         prefix = prefix.unwrap_or(""),
         sub = "OBS_PACKAGE_URL - Subscribe to a package. Get notification if build-status changes.",
         unsub = "unsub OBS_PACKAGE_URL - Unsubscribe from a package. Get no more notifications.",
+        list = "list packages - List all packages currently subscribed to.",
     )
     .to_string()
 }
@@ -46,26 +47,28 @@ struct BuildSuccessInfo {
     previouslyfailed: Option<String>,
 }
 
-impl MessageHandler for Subscriber<(String, String)> {
+impl MessageHandler for Subscriber<PackageKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        let url = format!("{}/package/", self.server_details.domain);
         let keyparser = |parts: &Vec<&str>| {
             let mut iter = parts.iter().rev();
             // These unwraps cannot fail, as there have to be at least 2 parts
             let package = iter.next().unwrap().trim().to_string();
             let project = iter.next().unwrap().trim().to_string();
 
-            let key = (project.clone(), package.clone());
+            let key = PackageKey {
+                project: project.clone(),
+                package: package.clone(),
+            };
             return key;
         };
-        self.handle_message_helper(bot, message, &url, 4, Box::new(keyparser));
+        self.handle_message_helper(bot, message, 4, Box::new(keyparser));
 
         HandleResult::ContinueHandling
     }
 }
 
-impl Subscriber<(String, String)> {
+impl Subscriber<PackageKey> {
     fn generate_messages(&self, jsondata: BuildSuccessInfo, changetype: &str) -> (String, String) {
         let plain = format!(
             "Build {}: {}/{} ({} / {})",
@@ -80,9 +83,8 @@ impl Subscriber<(String, String)> {
                 format!("<u>{}</u>", changetype)
             },
             format!(
-                "https://{}.{}/package/show/{}/{}",
-                self.server_details.buildprefix,
-                self.server_details.domain,
+                "{}/{}/{}",
+                self.get_base_url(),
                 jsondata.project,
                 jsondata.package,
             ),
@@ -111,7 +113,10 @@ impl Subscriber<(String, String)> {
             ));
         }
 
-        let key = (jsondata.project.clone(), jsondata.package.clone());
+        let key = PackageKey {
+            project: jsondata.project.clone(),
+            package: jsondata.package.clone(),
+        };
         let rooms;
         if let Ok(subscriptions) = self.subscriptions.lock() {
             // This is a message we are not subscribed to
@@ -144,7 +149,7 @@ impl Subscriber<(String, String)> {
     }
 }
 
-impl ConsumerDelegate for Subscriber<(String, String)> {
+impl ConsumerDelegate for Subscriber<PackageKey> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
             match self.delivery_wrapper(delivery) {
@@ -165,7 +170,8 @@ pub fn subscribe(
 ) -> Result<()> {
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
-    let sub: Subscriber<(String, String)> = Subscriber {
+    let sub: Subscriber<PackageKey> = Subscriber {
+        subtype: format!("package"),
         server_details: details.clone(),
         channel: channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),

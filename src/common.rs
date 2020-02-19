@@ -4,6 +4,18 @@ use matrix_bot_api::{ActiveBot, Message, MessageType};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
+#[derive(Debug, Clone, std::cmp::PartialEq, std::cmp::Eq, Hash)]
+pub struct PackageKey {
+    pub project: String,
+    pub package: String,
+}
+
+impl std::fmt::Display for PackageKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.project, self.package)
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionDetails {
     pub domain: &'static str,
@@ -16,16 +28,69 @@ pub struct ConnectionDetails {
 #[derive(Clone)]
 pub struct Subscriber<T>
 where
-    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug,
+    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display,
 {
     pub server_details: ConnectionDetails,
     pub channel: Channel,
     pub bot: Arc<Mutex<ActiveBot>>,
     pub subscriptions: Arc<Mutex<HashMap<T, HashSet<String>>>>,
     pub prefix: Option<String>,
+    pub subtype: String,
 }
 
-impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscriber<T> {
+impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subscriber<T> {
+    pub fn get_base_url(&self) -> String {
+        format!(
+            "https://{}.{}/{}/show",
+            self.server_details.buildprefix, self.server_details.domain, self.subtype
+        )
+    }
+
+    pub fn list_keys(&self, bot: &ActiveBot, room: &str) {
+        if let Ok(subscriptions) = self.subscriptions.lock() {
+            let mut found_subscriptions = Vec::new();
+
+            for (key, value) in subscriptions.iter() {
+                if value.contains(room) {
+                    found_subscriptions.push(key.clone());
+                }
+            }
+
+            let plainanswer;
+            let htmlanswer;
+            if found_subscriptions.is_empty() {
+                plainanswer = format!("No subscriptions found");
+                htmlanswer = plainanswer.clone();
+            } else {
+                let mut unsorted = found_subscriptions
+                    .iter()
+                    .map(|x| format!("{}", x))
+                    .collect::<Vec<_>>();
+                unsorted.sort();
+                plainanswer = unsorted.join(", ");
+
+                unsorted = found_subscriptions
+                    .iter()
+                    .map(|x| format!("<a href={}/{}>{}</a>", self.get_base_url(), x, x))
+                    .collect::<Vec<_>>();
+                unsorted.sort();
+                htmlanswer = unsorted.join("<br>");
+            }
+
+            let plainanswer = format!("On {}: {}", self.server_details.domain, plainanswer);
+            let htmlanswer = format!("On {}:<br>{}", self.server_details.domain, htmlanswer);
+
+            bot.send_html_message(&plainanswer, &htmlanswer, room, MessageType::TextMessage);
+        } else {
+            println!("ERROR! list_keys: subscriptions not lockable");
+            bot.send_message(
+                "Sorry, I could not list your requests, due to an internal error.",
+                room,
+                MessageType::TextMessage,
+            );
+        }
+    }
+
     pub fn subscribe(&mut self, key: T, bot: &ActiveBot, room: &str) {
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             if !subscriptions.contains_key(&key) {
@@ -36,15 +101,12 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
                 .unwrap() // We know its in there, we just added it above
                 .insert(room.to_string());
             println!(
-                "Subscribing room {} to {:?} on {}",
+                "Subscribing room {} to {} on {}",
                 room, key, &self.server_details.domain
             );
 
             bot.send_message(
-                &format!(
-                    "Subscribing to {:?} on {}",
-                    key, &self.server_details.domain
-                ),
+                &format!("Subscribing to {} on {}", key, &self.server_details.domain),
                 room,
                 MessageType::TextMessage,
             );
@@ -74,13 +136,13 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
             }
 
             println!(
-                "Unsubscribing room {} to {:?} on {}",
+                "Unsubscribing room {} to {} on {}",
                 room, key, &self.server_details.domain
             );
 
             bot.send_message(
                 &format!(
-                    "Unsubscribing to {:?} on {}",
+                    "Unsubscribing to {} on {}",
                     key, &self.server_details.domain
                 ),
                 room,
@@ -100,7 +162,6 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
         &mut self,
         bot: &ActiveBot,
         message: &Message,
-        search_url: &str,
         min_splits: usize,
         key_parser_func: Box<dyn Fn(&Vec<&str>) -> T>,
     ) {
@@ -110,14 +171,18 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
                 continue;
             }
             // Stripping away the prefix
-            let line = &line[prefix.len()..];
+            let line = line[prefix.len()..].trim();
 
-            // Check if its for me
-            if !line.contains(search_url) {
+            if line == &format!("list {}s", self.subtype) {
+                self.list_keys(bot, &message.room);
                 continue;
             }
 
-            let line = line.trim();
+            let search_url = format!("{}/{}/", self.server_details.domain, self.subtype);
+            // Check if its for me
+            if !line.contains(&search_url) {
+                continue;
+            }
 
             let parts: Vec<_> = line.split("/").collect();
             if parts.len() < min_splits {
