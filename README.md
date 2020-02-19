@@ -15,4 +15,6 @@ prefix = "obsbot:"
 and run `cargo run`.
 
 ## To use
-Paste in a URL of a package or a submitrequest to get notifications for changed status.
+Invite your bot into any room (be it 1:1 or group-chat).
+Type `[prefix]help` to get more info.
+It boils down to: Paste in a URL of a package or a submitrequest to get notifications for changed status.
