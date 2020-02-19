@@ -16,7 +16,7 @@ const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
 
 #[derive(Deserialize, Debug)]
-struct BuildSuccess {
+struct BuildSuccessInfo {
     arch: String,
     repository: String,
     package: String,
@@ -56,9 +56,38 @@ impl MessageHandler for Subscriber<(String, String)> {
 }
 
 impl Subscriber<(String, String)> {
+    fn generate_messages(&self, jsondata: BuildSuccessInfo, changetype: &str) -> (String, String) {
+        let plain = format!(
+            "Build {}: {}/{} ({} / {})",
+            changetype, jsondata.project, jsondata.package, jsondata.arch, jsondata.repository,
+        );
+
+        let html = format!(
+            "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
+            if changetype == "succeeded" {
+                changetype.to_string()
+            } else {
+                format!("<u>{}</u>", changetype)
+            },
+            format!(
+                "https://{}.{}/package/show/{}/{}",
+                self.server_details.buildprefix,
+                self.server_details.domain,
+                jsondata.project,
+                jsondata.package,
+            ),
+            jsondata.project,
+            jsondata.package,
+            jsondata.arch,
+            jsondata.repository,
+        );
+
+        (plain, html)
+    }
+
     fn delivery_wrapper(&self, delivery: Delivery) -> Result<()> {
         let data = std::str::from_utf8(&delivery.data)?;
-        let jsondata: BuildSuccess = serde_json::from_str(data)?;
+        let jsondata: BuildSuccessInfo = serde_json::from_str(data)?;
 
         let build_res;
         if delivery.routing_key.as_str().contains(KEY_BUILD_SUCCESS) {
@@ -91,38 +120,9 @@ impl Subscriber<(String, String)> {
         );
 
         if let Ok(bot) = self.bot.lock() {
-            for room in rooms {
-                bot.send_html_message(
-                    &format!(
-                        "Build {}: {}/{} ({} / {})",
-                        build_res,
-                        jsondata.project,
-                        jsondata.package,
-                        jsondata.arch,
-                        jsondata.repository,
-                    ),
-                    &format!(
-                        "<strong>Build {}</strong>: <a href={}>{}/{}</a> ({} / {})",
-                        if build_res == "succeeded" {
-                            build_res.to_string()
-                        } else {
-                            format!("<u>{}</u>", build_res)
-                        },
-                        format!(
-                            "https://{}.{}/package/show/{}/{}",
-                            self.server_details.buildprefix,
-                            self.server_details.domain,
-                            jsondata.project,
-                            jsondata.package,
-                        ),
-                        jsondata.project,
-                        jsondata.package,
-                        jsondata.arch,
-                        jsondata.repository,
-                    ),
-                    &room,
-                    MessageType::TextMessage,
-                );
+            let (plain, html) = self.generate_messages(jsondata, build_res);
+            for room in &rooms {
+                bot.send_html_message(&plain, &html, room, MessageType::TextMessage);
             }
         }
 

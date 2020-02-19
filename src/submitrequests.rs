@@ -46,6 +46,29 @@ impl MessageHandler for Subscriber<String> {
 }
 
 impl Subscriber<String> {
+    fn generate_messages(&self, jsondata: SubmitRequestInfo, changetype: &str) -> (String, String) {
+        let plain = format!(
+            "Request {} was {}: {} ({})",
+            jsondata.number,
+            changetype,
+            jsondata.state,
+            jsondata.comment.as_ref().unwrap_or(&String::new())
+        );
+        let html = format!(
+            "<a href={}>Request {}</a> was {}: <strong>{}</strong> ({})",
+            format!(
+                "https://{}.{}/request/show/{}",
+                self.server_details.buildprefix, self.server_details.domain, jsondata.number,
+            ),
+            jsondata.number,
+            changetype,
+            jsondata.state,
+            jsondata.comment.as_ref().unwrap_or(&String::new())
+        );
+
+        (plain, html)
+    }
+
     fn delivery_wrapper(&self, delivery: Delivery) -> Result<()> {
         let data = std::str::from_utf8(&delivery.data)?;
         let jsondata: SubmitRequestInfo = serde_json::from_str(data)?;
@@ -84,31 +107,9 @@ impl Subscriber<String> {
         println!("Request got {}: {}", changetype, jsondata.number);
 
         if let Ok(bot) = self.bot.lock() {
-            for room in rooms {
-                bot.send_html_message(
-                    &format!(
-                        "Request {} was {}: {} ({})",
-                        jsondata.number,
-                        changetype,
-                        jsondata.state,
-                        jsondata.comment.as_ref().unwrap_or(&String::new())
-                    ),
-                    &format!(
-                        "<a href={}>Request {}</a> was {}: <strong>{}</strong> ({})",
-                        format!(
-                            "https://{}.{}/request/show/{}",
-                            self.server_details.buildprefix,
-                            self.server_details.domain,
-                            jsondata.number,
-                        ),
-                        jsondata.number,
-                        changetype,
-                        jsondata.state,
-                        jsondata.comment.as_ref().unwrap_or(&String::new())
-                    ),
-                    &room,
-                    MessageType::TextMessage,
-                );
+            let (plain, html) = self.generate_messages(jsondata, changetype);
+            for room in &rooms {
+                bot.send_html_message(&plain, &html, room, MessageType::TextMessage);
             }
         }
 
