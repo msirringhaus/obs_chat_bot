@@ -55,10 +55,7 @@ impl MessageHandler for Subscriber<PackageKey> {
             let package = iter.next().unwrap().trim().to_string();
             let project = iter.next().unwrap().trim().to_string();
 
-            PackageKey {
-                project: project.clone(),
-                package: package.clone(),
-            }
+            PackageKey { project, package }
         };
         self.handle_message_helper(bot, message, 4, Box::new(keyparser));
 
