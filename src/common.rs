@@ -38,6 +38,15 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
                 "Subscribing room {} to {:?} on {}",
                 room, key, &self.server_details.domain
             );
+
+            bot.send_message(
+                &format!(
+                    "Subscribing to {:?} on {}",
+                    key, &self.server_details.domain
+                ),
+                room,
+                MessageType::TextMessage,
+            );
         } else {
             println!("subscriptions not lockable");
             bot.send_message(
@@ -66,6 +75,15 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
             println!(
                 "Unsubscribing room {} to {:?} on {}",
                 room, key, &self.server_details.domain
+            );
+
+            bot.send_message(
+                &format!(
+                    "Unsubscribing to {:?} on {}",
+                    key, &self.server_details.domain
+                ),
+                room,
+                MessageType::TextMessage,
             );
         } else {
             println!("subscriptions not lockable");
