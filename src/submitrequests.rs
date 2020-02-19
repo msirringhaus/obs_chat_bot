@@ -61,28 +61,27 @@ impl MessageHandler for Subscriber<String> {
 impl Subscriber<String> {
     fn generate_messages(&self, jsondata: SubmitRequestInfo, changetype: &str) -> (String, String) {
         let mut commentfield = String::new();
-        if jsondata.commenter.is_some() {
-            commentfield += jsondata.commenter.as_ref().unwrap();
-            commentfield += ": ";
-        }
-        if jsondata.comment.is_some() {
-            commentfield += jsondata.comment.as_ref().unwrap();
-        }
+        if changetype == "commented" {
+            if jsondata.commenter.is_some() {
+                commentfield += jsondata.commenter.as_ref().unwrap();
+                commentfield += ": ";
+            }
 
-        if jsondata.comment_body.is_some() && jsondata.comment.is_some() {
-            commentfield += " / ";
-        }
-
-        if jsondata.comment_body.is_some() {
-            commentfield += jsondata.comment_body.as_ref().unwrap();
+            if jsondata.comment_body.is_some() {
+                commentfield += jsondata.comment_body.as_ref().unwrap();
+            }
+        } else {
+            if jsondata.comment.is_some() {
+                commentfield += jsondata.comment.as_ref().unwrap();
+            }
         }
 
         let plain = format!(
-            "Request {} was {}: {} ({})",
+            "Request {} was {}. Status: {} ({})",
             jsondata.number, changetype, jsondata.state, commentfield,
         );
         let html = format!(
-            "<a href={}>Request {}</a> was {}: <strong>{}</strong> {}",
+            "<a href={}>Request {}</a> was {}. Status <strong>{}</strong> {}",
             format!(
                 "https://{}.{}/request/show/{}",
                 self.server_details.buildprefix, self.server_details.domain, jsondata.number,
