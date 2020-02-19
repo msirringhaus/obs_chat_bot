@@ -173,7 +173,7 @@ pub fn subscribe(
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<String> = Subscriber {
-        subtype: format!("request"),
+        subtype: "request".to_string(),
         server_details: *details,
         channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),

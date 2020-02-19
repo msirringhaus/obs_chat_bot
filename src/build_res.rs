@@ -169,7 +169,7 @@ pub fn subscribe(
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<PackageKey> = Subscriber {
-        subtype: format!("package"),
+        subtype: "package".to_string(),
         server_details: *details,
         channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
