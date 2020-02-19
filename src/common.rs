@@ -25,7 +25,7 @@ where
 }
 
 impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscriber<T> {
-    pub fn add_to_subscriptions(&mut self, key: T, bot: &ActiveBot, room: &str) {
+    pub fn subscribe(&mut self, key: T, bot: &ActiveBot, room: &str) {
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             if !subscriptions.contains_key(&key) {
                 subscriptions.insert(key.clone(), HashSet::new());
@@ -48,6 +48,35 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
         }
     }
 
+    pub fn unsubscribe(&mut self, key: T, bot: &ActiveBot, room: &str) {
+        if let Ok(mut subscriptions) = self.subscriptions.lock() {
+            if !subscriptions.contains_key(&key) {
+                return;
+            }
+            subscriptions
+                .get_mut(&key)
+                .unwrap() // We know its in there, we just checked it above
+                .remove(room);
+
+            // Check if anybody still uses this key
+            if subscriptions.get(&key).unwrap().is_empty() {
+                subscriptions.remove(&key);
+            }
+
+            println!(
+                "Unsubscribing room {} to {:?} on {}",
+                room, key, &self.server_details.domain
+            );
+        } else {
+            println!("subscriptions not lockable");
+            bot.send_message(
+                "Sorry, I could not remove your subscription, due to an internal error.",
+                room,
+                MessageType::TextMessage,
+            );
+        }
+    }
+
     pub fn handle_message_helper(
         &mut self,
         bot: &ActiveBot,
@@ -62,6 +91,8 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
                 continue;
             }
 
+            let line = line.trim();
+
             let parts: Vec<_> = line.split("/").collect();
             if parts.len() < min_splits {
                 println!("Message not parsable");
@@ -75,7 +106,11 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
 
             let key = key_parser_func(&parts);
 
-            self.add_to_subscriptions(key, bot, &message.room);
+            if line.starts_with("unsub") {
+                self.unsubscribe(key, bot, &message.room);
+            } else {
+                self.subscribe(key, bot, &message.room);
+            }
         }
     }
 }
