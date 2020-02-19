@@ -48,8 +48,7 @@ impl MessageHandler for Subscriber<String> {
         let keyparser = |parts: &Vec<&str>| {
             let mut iter = parts.iter().rev();
             // These unwraps cannot fail, as there have to be at least 2 parts
-            let number = iter.next().unwrap().trim().to_string();
-            return number;
+            iter.next().unwrap().trim().to_string()
         };
         self.handle_message_helper(bot, message, 3, Box::new(keyparser));
 
