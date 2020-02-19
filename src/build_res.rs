@@ -172,10 +172,10 @@ pub fn subscribe(
     let sub: Subscriber<PackageKey> = Subscriber {
         subtype: format!("package"),
         server_details: details.clone(),
-        channel: channel,
+        channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
-        prefix: prefix,
+        prefix,
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));
