@@ -1,7 +1,7 @@
 use anyhow::Result;
 use lapin::{options::*, types::FieldTable, Channel, Consumer, ExchangeKind};
 use matrix_bot_api::{ActiveBot, Message, MessageType};
-use std::collections::hash_map::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy)]
@@ -21,19 +21,19 @@ where
     pub server_details: ConnectionDetails,
     pub channel: Channel,
     pub bot: Arc<Mutex<ActiveBot>>,
-    pub subscriptions: Arc<Mutex<HashMap<T, Vec<String>>>>,
+    pub subscriptions: Arc<Mutex<HashMap<T, HashSet<String>>>>,
 }
 
 impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscriber<T> {
     pub fn add_to_subscriptions(&mut self, key: T, bot: &ActiveBot, room: &str) {
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             if !subscriptions.contains_key(&key) {
-                subscriptions.insert(key.clone(), Vec::new());
+                subscriptions.insert(key.clone(), HashSet::new());
             }
             subscriptions
                 .get_mut(&key)
                 .unwrap() // We know its in there, we just added it above
-                .push(room.to_string());
+                .insert(room.to_string());
             println!(
                 "Subscribing room {} to {:?} on {}",
                 room, key, &self.server_details.domain
