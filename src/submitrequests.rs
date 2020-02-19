@@ -68,10 +68,8 @@ impl Subscriber<String> {
             if jsondata.comment_body.is_some() {
                 commentfield += jsondata.comment_body.as_ref().unwrap();
             }
-        } else {
-            if jsondata.comment.is_some() {
-                commentfield += jsondata.comment.as_ref().unwrap();
-            }
+        } else if jsondata.comment.is_some() {
+            commentfield += jsondata.comment.as_ref().unwrap();
         }
 
         let plain = format!(
