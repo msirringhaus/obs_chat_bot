@@ -1,53 +1,46 @@
 mod build_res;
 mod common;
+mod leave;
 mod submitrequests;
 
 use anyhow::Result;
 use common::ConnectionDetails;
 use config;
-use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
+
+use matrix_bot_api::handlers::{extract_command, HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 
 use lapin::{Connection, ConnectionProperties};
 
-fn general_help_func(bot: &ActiveBot, message: &Message, cmd: &str) -> HandleResult {
-    let cmd_split: Vec<&str> = cmd.split_whitespace().collect();
-    match cmd_split.len() {
-        0 => {
-            bot.send_message(&general_help_str(), &message.room, MessageType::RoomNotice);
-        }
-        1 => {
-            // return HandleResult::ContinueHandling;
-            match cmd_split[0] {
-                // k if k == "roll" => {
-                //     bot.send_message(&dice::help_str(), &message.room, MessageType::RoomNotice)
-                // }
-                // k if k == "stash" => {
-                //     bot.send_message(&stash::help_str(), &message.room, MessageType::RoomNotice)
-                // }
-                _ => bot.send_message(
-                    "Sorry, unknown command",
-                    &message.room,
-                    MessageType::RoomNotice,
-                ),
-            }
-        }
-        _ => {
-            bot.send_message("Sorry, that is not possible. Please use \"!help\" or \"!help COMMAND\" for more information.", &message.room, MessageType::RoomNotice);
-        }
-    };
-    HandleResult::StopHandling
+#[derive(Debug)]
+struct HelpHandler {
+    prefix: Option<String>,
 }
 
-fn general_help_str() -> String {
-    let mut message = "Hi, I'm a friendly robot and provide these options:".to_string();
-    message += "\n";
-    message += "!help         - Print this help";
-    message += "\n";
-    message += "!help COMMAND - Print add. help for one of the commands below";
-    message += "\n";
-    // message += &dice::help_str_short();
-    message
+impl MessageHandler for HelpHandler {
+    fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
+        let command = match extract_command(&message.body, self.prefix.as_deref().unwrap_or("")) {
+            Some(x) => x,
+            None => return HandleResult::ContinueHandling,
+        };
+        if command != "help" {
+            return HandleResult::ContinueHandling;
+        }
+
+        let mut msg = "Hi, I'm a friendly robot and provide these options:".to_string();
+        msg += "\n";
+        msg += self.prefix.as_deref().unwrap_or("");
+        msg += "help         - Print this help";
+        msg += "\n";
+        msg += &leave::help_str(self.prefix.as_deref());
+        msg += "\n";
+        msg += &build_res::help_str(self.prefix.as_deref());
+        msg += "\n";
+        msg += &submitrequests::help_str(self.prefix.as_deref());
+
+        bot.send_message(&msg, &message.room, MessageType::RoomNotice);
+        return HandleResult::StopHandling;
+    }
 }
 
 const SUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
@@ -77,18 +70,15 @@ fn main() -> Result<()> {
     // =========================================================
 
     // Defining Prefix - default: "!"
-    let prefix = Some(""); // No special prefix at the moment. Replace by Some("myprefix")
+    let prefix = Some(String::new()); // No special prefix at the moment. Replace by Some("myprefix")
 
     // Defining the first handler for general help
-    let mut handler = StatelessHandler::new();
-    match prefix {
-        Some(x) => handler.set_cmd_prefix(x),
-        None => { /* Nothing */ }
-    }
-    handler.register_handle("help", general_help_func);
+    let help_handler = HelpHandler {
+        prefix: prefix.clone(),
+    };
 
     // Creating the bot
-    let mut bot = MatrixBot::new(handler);
+    let mut bot = MatrixBot::new(help_handler);
 
     for details in [OPENSUSE_CONNECTION, SUSE_CONNECTION].iter() {
         let addr = format!(
@@ -103,11 +93,13 @@ fn main() -> Result<()> {
         println!("CONNECTED TO {}", &addr);
 
         let channel = conn.create_channel().wait()?;
-        build_res::subscribe(&mut bot, details, channel)?;
+        build_res::subscribe(&mut bot, details, channel, prefix.clone())?;
 
         let channel = conn.create_channel().wait()?;
-        submitrequests::subscribe(&mut bot, details, channel)?;
+        submitrequests::subscribe(&mut bot, details, channel, prefix.clone())?;
     }
+
+    leave::register_handler(&mut bot, &prefix.as_deref());
 
     bot.run(&user, &password, &homeserver_url);
 

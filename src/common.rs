@@ -22,6 +22,7 @@ where
     pub channel: Channel,
     pub bot: Arc<Mutex<ActiveBot>>,
     pub subscriptions: Arc<Mutex<HashMap<T, HashSet<String>>>>,
+    pub prefix: Option<String>,
 }
 
 impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscriber<T> {
@@ -104,6 +105,13 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
         key_parser_func: Box<dyn Fn(&Vec<&str>) -> T>,
     ) {
         for line in message.body.lines() {
+            let prefix = self.prefix.as_deref().unwrap_or("");
+            if !line.starts_with(prefix) {
+                continue;
+            }
+            // Stripping away the prefix
+            let line = &line[prefix.len()..];
+
             // Check if its for me
             if !line.contains(search_url) {
                 continue;

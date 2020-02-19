@@ -17,6 +17,16 @@ const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
 const KEY_REQUEST_DELETE: &str = "obs.request.delete";
 const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
 
+pub fn help_str(prefix: Option<&str>) -> String {
+    format!(
+        "{prefix}{sub}\n{prefix}{unsub}",
+        prefix = prefix.unwrap_or(""),
+        sub = "OBS_REQUEST_URL - Subscribe to a SR/MR. Get notification if state changes.",
+        unsub = "unsub OBS_REQUEST_URL - Unsubscribe from a SR/MR. Get no more notifications.",
+    )
+    .to_string()
+}
+
 #[derive(Deserialize, Debug)]
 struct SubmitRequestInfo {
     state: String,
@@ -157,7 +167,12 @@ impl ConsumerDelegate for Subscriber<String> {
     }
 }
 
-pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) -> Result<()> {
+pub fn subscribe(
+    bot: &mut MatrixBot,
+    details: &ConnectionDetails,
+    channel: Channel,
+    prefix: Option<String>,
+) -> Result<()> {
     let subnames = [
         KEY_REQUEST_CHANGE,
         KEY_REQUEST_STATECHANGE,
@@ -170,6 +185,7 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
         channel: channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
+        prefix: prefix,
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));

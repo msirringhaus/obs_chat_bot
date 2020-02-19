@@ -15,6 +15,16 @@ use std::sync::{Arc, Mutex};
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
 
+pub fn help_str(prefix: Option<&str>) -> String {
+    format!(
+        "{prefix}{sub}\n{prefix}{unsub}",
+        prefix = prefix.unwrap_or(""),
+        sub = "OBS_PACKAGE_URL - Subscribe to a package. Get notification if build-status changes.",
+        unsub = "unsub OBS_PACKAGE_URL - Unsubscribe from a package. Get no more notifications.",
+    )
+    .to_string()
+}
+
 #[derive(Deserialize, Debug)]
 struct BuildSuccessInfo {
     arch: String,
@@ -147,7 +157,12 @@ impl ConsumerDelegate for Subscriber<(String, String)> {
     }
 }
 
-pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Channel) -> Result<()> {
+pub fn subscribe(
+    bot: &mut MatrixBot,
+    details: &ConnectionDetails,
+    channel: Channel,
+    prefix: Option<String>,
+) -> Result<()> {
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<(String, String)> = Subscriber {
@@ -155,6 +170,7 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
         channel: channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
+        prefix: prefix,
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));
