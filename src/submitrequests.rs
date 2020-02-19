@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 const KEY_REQUEST_CHANGE: &str = "obs.request.change";
 const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
 const KEY_REQUEST_DELETE: &str = "obs.request.delete";
+const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
 
 #[derive(Deserialize, Debug)]
 struct SubmitRequestInfo {
@@ -22,6 +23,8 @@ struct SubmitRequestInfo {
     number: i32,
     author: Option<String>,
     comment: Option<String>,
+    comment_body: Option<String>,
+    commenter: Option<String>,
     description: Option<String>,
     actions: Option<serde_json::Value>,
     when: Option<String>,
@@ -47,15 +50,29 @@ impl MessageHandler for Subscriber<String> {
 
 impl Subscriber<String> {
     fn generate_messages(&self, jsondata: SubmitRequestInfo, changetype: &str) -> (String, String) {
+        let mut commentfield = String::new();
+        if jsondata.commenter.is_some() {
+            commentfield += jsondata.commenter.as_ref().unwrap();
+            commentfield += ": ";
+        }
+        if jsondata.comment.is_some() {
+            commentfield += jsondata.comment.as_ref().unwrap();
+        }
+
+        if jsondata.comment_body.is_some() && jsondata.comment.is_some() {
+            commentfield += " / ";
+        }
+
+        if jsondata.comment_body.is_some() {
+            commentfield += jsondata.comment_body.as_ref().unwrap();
+        }
+
         let plain = format!(
             "Request {} was {}: {} ({})",
-            jsondata.number,
-            changetype,
-            jsondata.state,
-            jsondata.comment.as_ref().unwrap_or(&String::new())
+            jsondata.number, changetype, jsondata.state, commentfield,
         );
         let html = format!(
-            "<a href={}>Request {}</a> was {}: <strong>{}</strong> ({})",
+            "<a href={}>Request {}</a> was {}: <strong>{}</strong> {}",
             format!(
                 "https://{}.{}/request/show/{}",
                 self.server_details.buildprefix, self.server_details.domain, jsondata.number,
@@ -63,7 +80,11 @@ impl Subscriber<String> {
             jsondata.number,
             changetype,
             jsondata.state,
-            jsondata.comment.as_ref().unwrap_or(&String::new())
+            if commentfield.is_empty() {
+                String::new()
+            } else {
+                format!("<br>{}", commentfield)
+            }
         );
 
         (plain, html)
@@ -83,6 +104,8 @@ impl Subscriber<String> {
             changetype = "changed";
         } else if delivery.routing_key.as_str().contains(KEY_REQUEST_DELETE) {
             changetype = "deleted";
+        } else if delivery.routing_key.as_str().contains(KEY_REQUEST_COMMENT) {
+            changetype = "commented";
         } else {
             return Err(anyhow!(
                 "Changetype of SR event unknown: {}",
@@ -139,6 +162,7 @@ pub fn subscribe(bot: &mut MatrixBot, details: &ConnectionDetails, channel: Chan
         KEY_REQUEST_CHANGE,
         KEY_REQUEST_STATECHANGE,
         KEY_REQUEST_DELETE,
+        KEY_REQUEST_COMMENT,
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<String> = Subscriber {
