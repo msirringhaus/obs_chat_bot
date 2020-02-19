@@ -70,7 +70,7 @@ fn main() -> Result<()> {
     // =========================================================
 
     // Defining Prefix - default: "!"
-    let prefix = Some(String::new()); // No special prefix at the moment. Replace by Some("myprefix")
+    let prefix = settings.get_str("prefix").ok(); // No special prefix at the moment. Replace by Some("myprefix")
 
     // Defining the first handler for general help
     let help_handler = HelpHandler {
@@ -99,7 +99,7 @@ fn main() -> Result<()> {
         submitrequests::subscribe(&mut bot, details, channel, prefix.clone())?;
     }
 
-    leave::register_handler(&mut bot, &prefix.as_deref());
+    leave::register_handler(&mut bot, prefix.as_deref());
 
     bot.run(&user, &password, &homeserver_url);
 

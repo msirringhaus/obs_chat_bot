@@ -2,7 +2,8 @@ use matrix_bot_api::handlers::HandleResult::{ContinueHandling, StopHandling};
 use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 
-pub fn shutdown(bot: &ActiveBot, _message: &Message, _cmd: &str) -> HandleResult {
+pub fn shutdown(bot: &ActiveBot, message: &Message, _cmd: &str) -> HandleResult {
+    bot.send_message("Bye!", &message.room, MessageType::RoomNotice);
     bot.shutdown();
     ContinueHandling
 }
@@ -13,11 +14,11 @@ pub fn leave(bot: &ActiveBot, message: &Message, _cmd: &str) -> HandleResult {
     StopHandling
 }
 
-pub fn register_handler(bot: &mut MatrixBot, prefix: &Option<&str>) {
+pub fn register_handler(bot: &mut MatrixBot, prefix: Option<&str>) {
     let mut handler = StatelessHandler::new();
     match prefix {
         Some(x) => handler.set_cmd_prefix(x),
-        None => { /* Nothing */ }
+        None => handler.set_cmd_prefix(""),
     }
 
     handler.register_handle("leave", leave);

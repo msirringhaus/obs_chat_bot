@@ -8,6 +8,8 @@ Create a `botconfig.toml` file like this:
 user = "botname"
 password = "bot_password"
 homeserver_url = "https://your.matrix-homeserver.com"
+# Optional: Bot only interprets messages starting with this prefix
+prefix = "obsbot:"
 ```
 
 and run `cargo run`.
