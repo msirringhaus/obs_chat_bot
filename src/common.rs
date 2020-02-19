@@ -62,7 +62,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Debug> Subscr
                 continue;
             }
 
-            let parts: Vec<_> = message.body.split("/").collect();
+            let parts: Vec<_> = line.split("/").collect();
             if parts.len() < min_splits {
                 println!("Message not parsable");
                 bot.send_message(
