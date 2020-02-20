@@ -1,4 +1,4 @@
-use crate::common::{prepend_prefix, ConnectionDetails, PackageKey, Subscriber};
+use crate::common::{prepend_prefix, ConnectionDetails, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
@@ -32,6 +32,18 @@ pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
     ];
 
     prepend_prefix(prefix, &without_prefix)
+}
+
+#[derive(Debug, Clone, std::cmp::PartialEq, std::cmp::Eq, Hash)]
+pub struct PackageKey {
+    pub project: String,
+    pub package: String,
+}
+
+impl std::fmt::Display for PackageKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.project, self.package)
+    }
 }
 
 #[derive(Deserialize, Debug)]

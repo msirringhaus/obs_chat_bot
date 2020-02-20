@@ -4,18 +4,6 @@ use matrix_bot_api::{ActiveBot, Message, MessageType};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, Clone, std::cmp::PartialEq, std::cmp::Eq, Hash)]
-pub struct PackageKey {
-    pub project: String,
-    pub package: String,
-}
-
-impl std::fmt::Display for PackageKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}/{}", self.project, self.package)
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct ConnectionDetails {
     pub domain: &'static str,
