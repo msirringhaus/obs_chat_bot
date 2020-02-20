@@ -20,18 +20,29 @@ impl MessageHandler for HelpHandler {
             return HandleResult::ContinueHandling;
         }
 
-        let mut msg = "Hi, I'm a friendly robot and provide these options:".to_string();
-        msg += "\n";
-        msg += self.prefix.as_deref().unwrap_or("");
-        msg += "help         - Print this help";
-        msg += "\n";
-        msg += &leave::help_str(self.prefix.as_deref());
-        msg += "\n";
-        msg += &build_res::help_str(self.prefix.as_deref());
-        msg += "\n";
-        msg += &submitrequests::help_str(self.prefix.as_deref());
+        let mut items = vec![("help".to_string(), "Print this help".to_string())];
+        items.append(&mut leave::help_str(self.prefix.as_deref()));
+        items.append(&mut build_res::help_str(self.prefix.as_deref()));
+        items.append(&mut submitrequests::help_str(self.prefix.as_deref()));
 
-        bot.send_message(&msg, &message.room, MessageType::RoomNotice);
+        let mut plainmsg = "Hi, I'm a friendly robot and provide these options:".to_string();
+        for (key, text) in &items {
+            plainmsg += "\n";
+            plainmsg += &format!("{:<35} - {}", key, text)
+        }
+
+        let mut htmlmsg =
+            "<h3>Hi, I'm a friendly robot and provide these options:</h3>".to_string();
+        htmlmsg += "\n";
+        htmlmsg += "<table>";
+        for (key, text) in &items {
+            htmlmsg += "\n";
+            htmlmsg += &format!("<tr> <td>{}</td> <td>{}</td></tr>", key, text)
+        }
+        htmlmsg += "\n";
+        htmlmsg += "</table>";
+
+        bot.send_html_message(&plainmsg, &htmlmsg, &message.room, MessageType::TextMessage);
         HandleResult::StopHandling
     }
 }

@@ -33,6 +33,8 @@ const OPENSUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
 };
 
 fn main() -> Result<()> {
+    // ================== Search for config file  ==================
+    // If we have a commandline argument, use that. If not, search XDG-paths
     let config_path = match args().nth(1) {
         Some(x) => std::path::PathBuf::from(x),
         None => {
@@ -46,6 +48,7 @@ fn main() -> Result<()> {
             })?
         }
     };
+
     // ================== Loading credentials ==================
     let mut settings = config::Config::default();
     settings.merge(config::File::from(config_path))?;
@@ -55,18 +58,18 @@ fn main() -> Result<()> {
     let homeserver_url = settings.get_str("homeserver_url")?;
 
     let backends = settings.get::<Vec<String>>("backends")?;
+
+    let prefix = settings.get_str("prefix").ok();
     // =========================================================
-    // double-check backends
+
+    // Check if backends are supported
     for backend in &backends {
         if !SUPPORTED_BACKENDS.contains(&backend.as_str()) {
             panic!("Backend {} is not supported!", backend);
         }
     }
 
-    // Defining Prefix - default: "!"
-    let prefix = settings.get_str("prefix").ok(); // No special prefix at the moment. Replace by Some("myprefix")
-
-    // Defining the first handler for general help
+    // Defining the first handler for general help output
     let help_handler = HelpHandler {
         prefix: prefix.clone(),
     };
@@ -74,13 +77,17 @@ fn main() -> Result<()> {
     // Creating the bot
     let mut bot = MatrixBot::new(help_handler);
 
+    // Add another handler to handle leave and shutdown
+    leave::register_handler(&mut bot, prefix.as_deref());
+
+    // Establish connections to all chosen backends
     for details in [OPENSUSE_CONNECTION, SUSE_CONNECTION].iter() {
         if !backends.contains(&details.domain.to_string()) {
             continue;
         }
 
         let addr = format!(
-            "amqps://{login}@{prefix}.{domain}/%2f",
+            "amqps://{login}@{prefix}.{domain}/%2f", // don't know why /%2f is needed, but it fails without it
             login = details.login,
             prefix = details.rabbitprefix,
             domain = details.domain
@@ -90,15 +97,16 @@ fn main() -> Result<()> {
 
         println!("CONNECTED TO {}", &addr);
 
+        // Subscribe to build_success/build_fails
         let channel = conn.create_channel().wait()?;
         build_res::subscribe(&mut bot, details, channel, prefix.clone())?;
 
+        // Subscribe to request-changes
         let channel = conn.create_channel().wait()?;
         submitrequests::subscribe(&mut bot, details, channel, prefix.clone())?;
     }
 
-    leave::register_handler(&mut bot, prefix.as_deref());
-
+    // Blocking call until shutdown is issued
     bot.run(&user, &password, &homeserver_url);
 
     Ok(())

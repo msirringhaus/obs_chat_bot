@@ -1,4 +1,4 @@
-use crate::common::{ConnectionDetails, Subscriber};
+use crate::common::{prepend_prefix, ConnectionDetails, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
@@ -17,14 +17,23 @@ const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
 const KEY_REQUEST_DELETE: &str = "obs.request.delete";
 const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
 
-pub fn help_str(prefix: Option<&str>) -> String {
-    format!(
-        "{prefix}{sub}\n{prefix}{unsub}\n{prefix}{list}",
-        prefix = prefix.unwrap_or(""),
-        sub = "OBS_REQUEST_URL - Subscribe to a SR/MR. Get notification if state changes.",
-        unsub = "unsub OBS_REQUEST_URL - Unsubscribe from a SR/MR. Get no more notifications.",
-        list = "list requests - List all requests currently subscribed to.",
-    )
+pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
+    let without_prefix = [
+        (
+            "OBS_REQUEST_URL",
+            "Subscribe to a SR/MR. Get notification if state changes.",
+        ),
+        (
+            "unsub OBS_REQUEST_URL",
+            "Unsubscribe from a SR/MR. Get no more notifications.",
+        ),
+        (
+            "list requests",
+            "List all requests currently subscribed to.",
+        ),
+    ];
+
+    prepend_prefix(prefix, &without_prefix)
 }
 
 #[derive(Deserialize, Debug)]

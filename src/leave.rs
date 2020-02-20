@@ -1,3 +1,4 @@
+use crate::common::prepend_prefix;
 use matrix_bot_api::handlers::HandleResult::{ContinueHandling, StopHandling};
 use matrix_bot_api::handlers::{HandleResult, StatelessHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
@@ -26,9 +27,11 @@ pub fn register_handler(bot: &mut MatrixBot, prefix: Option<&str>) {
     bot.add_handler(handler);
 }
 
-pub fn help_str(prefix: Option<&str>) -> String {
-    format!(
-        "{0}leave     - Leave the current room\n{0}shutdown   - Shutdown the bot completely",
-        prefix.unwrap_or("")
-    )
+pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
+    let without_prefix = [
+        ("leave", "Leave the current room"),
+        ("shutdown", "Shutdown the bot completely"),
+    ];
+
+    prepend_prefix(prefix, &without_prefix)
 }

@@ -1,4 +1,4 @@
-use crate::common::{ConnectionDetails, PackageKey, Subscriber};
+use crate::common::{prepend_prefix, ConnectionDetails, PackageKey, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
@@ -15,14 +15,23 @@ use std::sync::{Arc, Mutex};
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
 
-pub fn help_str(prefix: Option<&str>) -> String {
-    format!(
-        "{prefix}{sub}\n{prefix}{unsub}\n{prefix}{list}",
-        prefix = prefix.unwrap_or(""),
-        sub = "OBS_PACKAGE_URL - Subscribe to a package. Get notification if build-status changes.",
-        unsub = "unsub OBS_PACKAGE_URL - Unsubscribe from a package. Get no more notifications.",
-        list = "list packages - List all packages currently subscribed to.",
-    )
+pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
+    let without_prefix = [
+        (
+            "OBS_PACKAGE_URL",
+            "Subscribe to a package. Get notification if build-status changes.",
+        ),
+        (
+            "unsub OBS_PACKAGE_URL",
+            "Unsubscribe from a package. Get no more notifications.",
+        ),
+        (
+            "list packages",
+            "List all packages currently subscribed to.",
+        ),
+    ];
+
+    prepend_prefix(prefix, &without_prefix)
 }
 
 #[derive(Deserialize, Debug)]

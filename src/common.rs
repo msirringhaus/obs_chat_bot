@@ -257,3 +257,16 @@ pub fn subscribe(
 
     Ok((channel, consumer))
 }
+
+pub fn prepend_prefix(
+    prefix: Option<&str>,
+    without_prefix: &[(&str, &str)],
+) -> Vec<(String, String)> {
+    let prefix = prefix.unwrap_or("");
+
+    let mut res = Vec::new();
+    for (key, text) in without_prefix.iter() {
+        res.push((format!("{}{}", prefix, key), (*text).to_string()));
+    }
+    res
+}
