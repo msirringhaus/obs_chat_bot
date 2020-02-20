@@ -3,7 +3,7 @@
 A Matrix chat bot for the open build service (OBS) of openSUSE.
 
 ## To test
-Create a `botconfig.toml` file like this:
+Create a `obs_chat_bot/config.toml` file in one of your XDG_CONFIG-directories like this:
 ```
 user = "botname"
 password = "bot_password"
@@ -16,6 +16,10 @@ prefix = "obsbot:"
 ```
 
 and run `cargo run`.
+
+or
+
+give it directly with `cargo run -- YOURCONFIG.toml`
 
 ## To use
 Invite your bot into any room (be it 1:1 or group-chat).

@@ -4,12 +4,13 @@ mod help;
 mod leave;
 mod submitrequests;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use common::ConnectionDetails;
 use config;
 use help::HelpHandler;
-
 use matrix_bot_api::MatrixBot;
+use std::env::args;
+use xdg;
 
 use lapin::{Connection, ConnectionProperties};
 
@@ -32,9 +33,22 @@ const OPENSUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
 };
 
 fn main() -> Result<()> {
+    let config_path = match args().nth(1) {
+        Some(x) => std::path::PathBuf::from(x),
+        None => {
+            let dirs = xdg::BaseDirectories::with_prefix("obs_chat_bot")?;
+            dirs.find_config_file("config.toml").ok_or_else(|| {
+                anyhow!(
+                    "No config-file found! Looked for config.toml in your XDG-paths ({:?}, {:?})",
+                    dirs.get_config_home(),
+                    dirs.get_config_dirs()
+                )
+            })?
+        }
+    };
     // ================== Loading credentials ==================
     let mut settings = config::Config::default();
-    settings.merge(config::File::with_name("botconfig"))?;
+    settings.merge(config::File::from(config_path))?;
 
     let user = settings.get_str("user")?;
     let password = settings.get_str("password")?;
