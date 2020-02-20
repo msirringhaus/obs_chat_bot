@@ -249,7 +249,11 @@ pub fn subscribe(
         )
         .wait()?;
 
-    println!("Subscribing to {}", details.domain);
+    println!(
+        "Subscribing to ({}) on {}",
+        subnames.join(", "),
+        details.domain
+    );
 
     Ok((channel, consumer))
 }
