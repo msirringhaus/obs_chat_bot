@@ -43,6 +43,8 @@ impl MessageHandler for HelpHandler {
     }
 }
 
+const SUPPORTED_BACKENDS: [&str; 2] = ["opensuse.org", "suse.de"];
+
 const SUSE_CONNECTION: ConnectionDetails = ConnectionDetails {
     domain: "suse.de",
     login: "suse:suse",
@@ -67,7 +69,15 @@ fn main() -> Result<()> {
     let user = settings.get_str("user")?;
     let password = settings.get_str("password")?;
     let homeserver_url = settings.get_str("homeserver_url")?;
+
+    let backends = settings.get::<Vec<String>>("backends")?;
     // =========================================================
+    // double-check backends
+    for backend in &backends {
+        if !SUPPORTED_BACKENDS.contains(&backend.as_str()) {
+            panic!("Backend {} is not supported!", backend);
+        }
+    }
 
     // Defining Prefix - default: "!"
     let prefix = settings.get_str("prefix").ok(); // No special prefix at the moment. Replace by Some("myprefix")
@@ -81,6 +91,10 @@ fn main() -> Result<()> {
     let mut bot = MatrixBot::new(help_handler);
 
     for details in [OPENSUSE_CONNECTION, SUSE_CONNECTION].iter() {
+        if !backends.contains(&details.domain.to_string()) {
+            continue;
+        }
+
         let addr = format!(
             "amqps://{login}@{prefix}.{domain}/%2f",
             login = details.login,

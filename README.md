@@ -8,6 +8,9 @@ Create a `botconfig.toml` file like this:
 user = "botname"
 password = "bot_password"
 homeserver_url = "https://your.matrix-homeserver.com"
+# Only opensuse.org and suse.de supported at the moment
+backends = ["opensuse.org", "suse.de"]  
+
 # Optional: Bot only interprets messages starting with this prefix
 prefix = "obsbot:"
 ```
