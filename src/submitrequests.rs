@@ -25,7 +25,6 @@ pub fn help_str(prefix: Option<&str>) -> String {
         unsub = "unsub OBS_REQUEST_URL - Unsubscribe from a SR/MR. Get no more notifications.",
         list = "list requests - List all requests currently subscribed to.",
     )
-    .to_string()
 }
 
 #[derive(Deserialize, Debug)]
@@ -49,8 +48,7 @@ impl MessageHandler for Subscriber<String> {
         let keyparser = |parts: &Vec<&str>| {
             let mut iter = parts.iter().rev();
             // These unwraps cannot fail, as there have to be at least 2 parts
-            let number = iter.next().unwrap().trim().to_string();
-            return number;
+            iter.next().unwrap().trim().to_string()
         };
         self.handle_message_helper(bot, message, 3, Box::new(keyparser));
 
@@ -70,10 +68,8 @@ impl Subscriber<String> {
             if jsondata.comment_body.is_some() {
                 commentfield += jsondata.comment_body.as_ref().unwrap();
             }
-        } else {
-            if jsondata.comment.is_some() {
-                commentfield += jsondata.comment.as_ref().unwrap();
-            }
+        } else if jsondata.comment.is_some() {
+            commentfield += jsondata.comment.as_ref().unwrap();
         }
 
         let plain = format!(
@@ -177,12 +173,12 @@ pub fn subscribe(
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<String> = Subscriber {
-        subtype: format!("request"),
-        server_details: details.clone(),
-        channel: channel,
+        subtype: "request".to_string(),
+        server_details: *details,
+        channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
-        prefix: prefix,
+        prefix,
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));

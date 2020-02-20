@@ -39,7 +39,7 @@ impl MessageHandler for HelpHandler {
         msg += &submitrequests::help_str(self.prefix.as_deref());
 
         bot.send_message(&msg, &message.room, MessageType::RoomNotice);
-        return HandleResult::StopHandling;
+        HandleResult::StopHandling
     }
 }
 

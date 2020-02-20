@@ -31,5 +31,4 @@ pub fn help_str(prefix: Option<&str>) -> String {
         "{0}leave     - Leave the current room\n{0}shutdown   - Shutdown the bot completely",
         prefix.unwrap_or("")
     )
-    .to_string()
 }

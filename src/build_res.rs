@@ -23,7 +23,6 @@ pub fn help_str(prefix: Option<&str>) -> String {
         unsub = "unsub OBS_PACKAGE_URL - Unsubscribe from a package. Get no more notifications.",
         list = "list packages - List all packages currently subscribed to.",
     )
-    .to_string()
 }
 
 #[derive(Deserialize, Debug)]
@@ -56,11 +55,7 @@ impl MessageHandler for Subscriber<PackageKey> {
             let package = iter.next().unwrap().trim().to_string();
             let project = iter.next().unwrap().trim().to_string();
 
-            let key = PackageKey {
-                project: project.clone(),
-                package: package.clone(),
-            };
-            return key;
+            PackageKey { project, package }
         };
         self.handle_message_helper(bot, message, 4, Box::new(keyparser));
 
@@ -171,12 +166,12 @@ pub fn subscribe(
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let sub: Subscriber<PackageKey> = Subscriber {
-        subtype: format!("package"),
-        server_details: details.clone(),
-        channel: channel,
+        subtype: "package".to_string(),
+        server_details: *details,
+        channel,
         bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
-        prefix: prefix,
+        prefix,
     };
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));

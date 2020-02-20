@@ -56,26 +56,24 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
                 }
             }
 
-            let plainanswer;
-            let htmlanswer;
-            if found_subscriptions.is_empty() {
-                plainanswer = format!("No subscriptions found");
-                htmlanswer = plainanswer.clone();
+            let (htmlanswer, plainanswer) = if found_subscriptions.is_empty() {
+                let answer = "No subscriptions found";
+                (answer.to_string(), answer.to_string())
             } else {
                 let mut unsorted = found_subscriptions
                     .iter()
                     .map(|x| format!("{}", x))
                     .collect::<Vec<_>>();
                 unsorted.sort();
-                plainanswer = unsorted.join(", ");
 
                 unsorted = found_subscriptions
                     .iter()
                     .map(|x| format!("<a href={}/{}>{}</a>", self.get_base_url(), x, x))
                     .collect::<Vec<_>>();
                 unsorted.sort();
-                htmlanswer = unsorted.join("<br>");
-            }
+
+                (unsorted.join("<br>"), unsorted.join(", "))
+            };
 
             let plainanswer = format!("On {}: {}", self.server_details.domain, plainanswer);
             let htmlanswer = format!("On {}:<br>{}", self.server_details.domain, htmlanswer);
@@ -173,7 +171,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
             // Stripping away the prefix
             let line = line[prefix.len()..].trim();
 
-            if line == &format!("list {}s", self.subtype) {
+            if line == format!("list {}s", self.subtype) {
                 self.list_keys(bot, &message.room);
                 continue;
             }
@@ -184,7 +182,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
                 continue;
             }
 
-            let parts: Vec<_> = line.split("/").collect();
+            let parts: Vec<_> = line.split('/').collect();
             if parts.len() < min_splits {
                 println!("Message not parsable");
                 bot.send_message(
