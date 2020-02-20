@@ -13,6 +13,12 @@ backends = ["opensuse.org", "suse.de"]
 
 # Optional: Bot only interprets messages starting with this prefix
 prefix = "obsbot:"
+
+# Optional: default subscriptions, to subscribe to at startup. List of (room, URL) to go through
+#           room: That is the matrix interal room-key. You can get this usually via the room-settings under "Advanced"
+# Note: Error-handling is minimal here. Errors in URLs or rooms won't cause aborts, but simply no or wrong subscriptions.
+default_subs = [["!sIdZOJxxgKCJANAvTJ:your-matrix-server.org", "https://build.opensuse.org/request/show/777777"],
+                ["!sIdZOJxxgKCJANAvTJ:your-matrix-server.org", "https://build.suse.de/package/show/home:YOU/hello_world"]]
 ```
 
 and run `cargo run`.

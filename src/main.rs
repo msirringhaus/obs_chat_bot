@@ -60,6 +60,8 @@ fn main() -> Result<()> {
     let backends = settings.get::<Vec<String>>("backends")?;
 
     let prefix = settings.get_str("prefix").ok();
+
+    let default_subs = settings.get::<Vec<(String, String)>>("default_subs").ok();
     // =========================================================
 
     // Check if backends are supported
@@ -99,11 +101,11 @@ fn main() -> Result<()> {
 
         // Subscribe to build_success/build_fails
         let channel = conn.create_channel().wait()?;
-        build_res::subscribe(&mut bot, details, channel, prefix.clone())?;
+        build_res::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
 
         // Subscribe to request-changes
         let channel = conn.create_channel().wait()?;
-        submitrequests::subscribe(&mut bot, details, channel, prefix.clone())?;
+        submitrequests::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
     }
 
     // Blocking call until shutdown is issued

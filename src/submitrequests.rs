@@ -51,16 +51,16 @@ struct SubmitRequestInfo {
     oldstate: Option<String>,
 }
 
+fn keyparser(parts: &[&str]) -> String {
+    let mut iter = parts.iter().rev();
+    // These unwraps cannot fail, as there have to be at least 2 parts
+    iter.next().unwrap().trim().to_string()
+}
+
 impl MessageHandler for Subscriber<String> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        let keyparser = |parts: &Vec<&str>| {
-            let mut iter = parts.iter().rev();
-            // These unwraps cannot fail, as there have to be at least 2 parts
-            iter.next().unwrap().trim().to_string()
-        };
-        self.handle_message_helper(bot, message, 3, Box::new(keyparser));
-
+        self.handle_message_helper(bot, &message.body, &message.room, 3, keyparser);
         HandleResult::ContinueHandling
     }
 }
@@ -173,6 +173,7 @@ pub fn subscribe(
     details: &ConnectionDetails,
     channel: Channel,
     prefix: Option<String>,
+    default_subs: &Option<Vec<(String, String)>>,
 ) -> Result<()> {
     let subnames = [
         KEY_REQUEST_CHANGE,
@@ -181,14 +182,24 @@ pub fn subscribe(
         KEY_REQUEST_COMMENT,
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
-    let sub: Subscriber<String> = Subscriber {
+    let activebot = bot.get_activebot_clone();
+    let mut sub: Subscriber<String> = Subscriber {
         subtype: "request".to_string(),
         server_details: *details,
         channel,
-        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
+        bot: Arc::new(Mutex::new(activebot.clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
         prefix,
     };
+
+    match default_subs {
+        None => {}
+        Some(subs) => {
+            for (room, url) in subs {
+                sub.handle_message_helper(&activebot, &url, &room, 3, keyparser);
+            }
+        }
+    }
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));
 

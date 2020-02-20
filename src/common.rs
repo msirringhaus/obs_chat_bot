@@ -1,6 +1,6 @@
 use anyhow::Result;
 use lapin::{options::*, types::FieldTable, Channel, Consumer, ExchangeKind};
-use matrix_bot_api::{ActiveBot, Message, MessageType};
+use matrix_bot_api::{ActiveBot, MessageType};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -147,11 +147,12 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
     pub fn handle_message_helper(
         &mut self,
         bot: &ActiveBot,
-        message: &Message,
+        message: &str,
+        room: &str,
         min_splits: usize,
-        key_parser_func: Box<dyn Fn(&Vec<&str>) -> T>,
+        key_parser_func: fn(&[&str]) -> T,
     ) {
-        for line in message.body.lines() {
+        for line in message.lines() {
             let prefix = self.prefix.as_deref().unwrap_or("");
             if !line.starts_with(prefix) {
                 continue;
@@ -160,7 +161,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
             let line = line[prefix.len()..].trim();
 
             if line == format!("list {}s", self.subtype) {
-                self.list_keys(bot, &message.room);
+                self.list_keys(bot, room);
                 continue;
             }
 
@@ -175,7 +176,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
                 println!("Message not parsable");
                 bot.send_message(
                     "Sorry, I could not parse that. Please post a submitrequest URL",
-                    &message.room,
+                    room,
                     MessageType::TextMessage,
                 );
                 continue;
@@ -184,9 +185,9 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
             let key = key_parser_func(&parts);
 
             if line.starts_with("unsub") {
-                self.unsubscribe(key, bot, &message.room);
+                self.unsubscribe(key, bot, room);
             } else {
-                self.subscribe(key, bot, &message.room);
+                self.subscribe(key, bot, room);
             }
         }
     }

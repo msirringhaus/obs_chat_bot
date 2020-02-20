@@ -67,18 +67,19 @@ struct BuildSuccessInfo {
     previouslyfailed: Option<String>,
 }
 
+fn keyparser(parts: &[&str]) -> PackageKey {
+    let mut iter = parts.iter().rev();
+    // These unwraps cannot fail, as there have to be at least 2 parts
+    let package = iter.next().unwrap().trim().to_string();
+    let project = iter.next().unwrap().trim().to_string();
+
+    PackageKey { project, package }
+}
+
 impl MessageHandler for Subscriber<PackageKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        let keyparser = |parts: &Vec<&str>| {
-            let mut iter = parts.iter().rev();
-            // These unwraps cannot fail, as there have to be at least 2 parts
-            let package = iter.next().unwrap().trim().to_string();
-            let project = iter.next().unwrap().trim().to_string();
-
-            PackageKey { project, package }
-        };
-        self.handle_message_helper(bot, message, 4, Box::new(keyparser));
+        self.handle_message_helper(bot, &message.body, &message.room, 4, keyparser);
 
         HandleResult::ContinueHandling
     }
@@ -183,17 +184,29 @@ pub fn subscribe(
     details: &ConnectionDetails,
     channel: Channel,
     prefix: Option<String>,
+    default_subs: &Option<Vec<(String, String)>>,
 ) -> Result<()> {
     let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
-    let sub: Subscriber<PackageKey> = Subscriber {
+    let activebot = bot.get_activebot_clone();
+    let mut sub: Subscriber<PackageKey> = Subscriber {
         subtype: "package".to_string(),
         server_details: *details,
         channel,
-        bot: Arc::new(Mutex::new(bot.get_activebot_clone())),
+        bot: Arc::new(Mutex::new(activebot.clone())),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
         prefix,
     };
+
+    match default_subs {
+        None => {}
+        Some(subs) => {
+            for (room, url) in subs {
+                sub.handle_message_helper(&activebot, &url, &room, 3, keyparser);
+            }
+        }
+    }
+
     bot.add_handler(sub.clone());
     consumer.set_delegate(Box::new(sub));
 
