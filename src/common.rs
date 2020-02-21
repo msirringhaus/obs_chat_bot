@@ -2,6 +2,7 @@ use anyhow::Result;
 use lapin::{options::*, types::FieldTable, Channel, Consumer, ExchangeKind};
 use matrix_bot_api::{ActiveBot, MessageType};
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +17,7 @@ pub struct ConnectionDetails {
 #[derive(Clone)]
 pub struct Subscriber<T>
 where
-    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display,
+    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display + TryFrom<String>,
 {
     pub server_details: ConnectionDetails,
     pub channel: Channel,
@@ -26,7 +27,10 @@ where
     pub subtype: String,
 }
 
-impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subscriber<T> {
+impl<T> Subscriber<T>
+where
+    T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display + TryFrom<String>,
+{
     pub fn get_base_url(&self) -> String {
         format!(
             "https://{}.{}/{}/show",
@@ -144,14 +148,7 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
         }
     }
 
-    pub fn handle_message_helper(
-        &mut self,
-        bot: &ActiveBot,
-        message: &str,
-        room: &str,
-        min_splits: usize,
-        key_parser_func: fn(&[&str]) -> T,
-    ) {
+    pub fn handle_message_helper(&mut self, bot: &ActiveBot, message: &str, room: &str) {
         for line in message.lines() {
             let prefix = self.prefix.as_deref().unwrap_or("");
             if !line.starts_with(prefix) {
@@ -171,18 +168,18 @@ impl<T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display> Subs
                 continue;
             }
 
-            let parts: Vec<_> = line.split('/').collect();
-            if parts.len() < min_splits {
-                println!("Message not parsable");
-                bot.send_message(
-                    "Sorry, I could not parse that. Please post a submitrequest URL",
-                    room,
-                    MessageType::TextMessage,
-                );
-                continue;
-            }
-
-            let key = key_parser_func(&parts);
+            let key = match T::try_from(line.to_string()) {
+                Ok(x) => x,
+                Err(_) => {
+                    println!("Message not parsable");
+                    bot.send_message(
+                        "Sorry, I could not parse that. Please post a submitrequest URL",
+                        room,
+                        MessageType::TextMessage,
+                    );
+                    continue;
+                }
+            };
 
             if line.starts_with("unsub") {
                 self.unsubscribe(key, bot, room);

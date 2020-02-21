@@ -10,6 +10,7 @@ use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
 use std::collections::hash_map::HashMap;
+use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
@@ -46,6 +47,29 @@ impl std::fmt::Display for PackageKey {
     }
 }
 
+impl TryFrom<String> for PackageKey {
+    type Error = ();
+
+    fn try_from(line: String) -> Result<Self, Self::Error> {
+        let line = line.trim();
+        if line.contains('\n') {
+            return Err(());
+        }
+
+        let parts: Vec<_> = line.split('/').collect();
+        if parts.len() < 4 {
+            return Err(());
+        }
+
+        let mut iter = parts.iter().rev();
+        // These unwraps cannot fail, as there have to be at least 2 parts
+        let package = iter.next().unwrap().trim().to_string();
+        let project = iter.next().unwrap().trim().to_string();
+
+        Ok(PackageKey { project, package })
+    }
+}
+
 #[derive(Deserialize, Debug)]
 struct BuildSuccessInfo {
     arch: String,
@@ -67,19 +91,10 @@ struct BuildSuccessInfo {
     previouslyfailed: Option<String>,
 }
 
-fn keyparser(parts: &[&str]) -> PackageKey {
-    let mut iter = parts.iter().rev();
-    // These unwraps cannot fail, as there have to be at least 2 parts
-    let package = iter.next().unwrap().trim().to_string();
-    let project = iter.next().unwrap().trim().to_string();
-
-    PackageKey { project, package }
-}
-
 impl MessageHandler for Subscriber<PackageKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        self.handle_message_helper(bot, &message.body, &message.room, 4, keyparser);
+        self.handle_message_helper(bot, &message.body, &message.room);
 
         HandleResult::ContinueHandling
     }
@@ -202,7 +217,7 @@ pub fn subscribe(
         None => {}
         Some(subs) => {
             for (room, url) in subs {
-                sub.handle_message_helper(&activebot, &url, &room, 3, keyparser);
+                sub.handle_message_helper(&activebot, &url, &room);
             }
         }
     }

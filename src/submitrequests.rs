@@ -10,6 +10,7 @@ use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
 use serde_json;
 use std::collections::hash_map::HashMap;
+use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
 
 const KEY_REQUEST_CHANGE: &str = "obs.request.change";
@@ -25,6 +26,27 @@ struct RequestKey {
 impl std::fmt::Display for RequestKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.id)
+    }
+}
+
+impl TryFrom<String> for RequestKey {
+    type Error = ();
+
+    fn try_from(line: String) -> Result<Self, Self::Error> {
+        let line = line.trim();
+        if line.contains('\n') {
+            return Err(());
+        }
+
+        let parts: Vec<_> = line.split('/').collect();
+        if parts.len() < 3 {
+            return Err(());
+        }
+
+        let mut iter = parts.iter().rev();
+        // These unwraps cannot fail, as there have to be at least 2 parts
+        let id = iter.next().unwrap().trim().to_string();
+        Ok(RequestKey { id })
     }
 }
 
@@ -62,17 +84,10 @@ struct SubmitRequestInfo {
     oldstate: Option<String>,
 }
 
-fn keyparser(parts: &[&str]) -> RequestKey {
-    let mut iter = parts.iter().rev();
-    // These unwraps cannot fail, as there have to be at least 2 parts
-    let id = iter.next().unwrap().trim().to_string();
-    RequestKey { id }
-}
-
 impl MessageHandler for Subscriber<RequestKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        self.handle_message_helper(bot, &message.body, &message.room, 3, keyparser);
+        self.handle_message_helper(bot, &message.body, &message.room);
         HandleResult::ContinueHandling
     }
 }
@@ -210,7 +225,7 @@ pub fn subscribe(
         None => {}
         Some(subs) => {
             for (room, url) in subs {
-                sub.handle_message_helper(&activebot, &url, &room, 3, keyparser);
+                sub.handle_message_helper(&activebot, &url, &room);
             }
         }
     }
