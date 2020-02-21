@@ -27,6 +27,13 @@ where
     pub subtype: String,
 }
 
+#[derive(Debug)]
+pub enum ScanLineResult {
+    NotForMe,
+    ListCommand,
+    PossiblyForMe,
+}
+
 impl<T> Subscriber<T>
 where
     T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display + TryFrom<String>,
@@ -81,7 +88,7 @@ where
         }
     }
 
-    pub fn subscribe(&mut self, key: T, bot: &ActiveBot, room: &str) {
+    pub fn subscribe(&mut self, key: T, room: &str) -> Result<String, String> {
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             if !subscriptions.contains_key(&key) {
                 subscriptions.insert(key.clone(), HashSet::new());
@@ -90,30 +97,21 @@ where
                 .get_mut(&key)
                 .unwrap() // We know its in there, we just added it above
                 .insert(room.to_string());
-            println!(
-                "Subscribing room {} to {} on {}",
-                room, key, &self.server_details.domain
-            );
 
-            bot.send_message(
-                &format!("Subscribing to {} on {}", key, &self.server_details.domain),
-                room,
-                MessageType::TextMessage,
-            );
+            Ok(format!(
+                "Subscribing to {} on {}",
+                key, &self.server_details.domain
+            ))
         } else {
-            println!("subscriptions not lockable");
-            bot.send_message(
-                "Sorry, I could not add your request to the subscriptions, due to an internal error.",
-                room,
-                MessageType::TextMessage,
-            );
+            Err(format!("Sorry, I could not add your request {} on {} to the subscriptions, due to an internal error ({}).",
+                key, &self.server_details.domain, "subscriptions not lockable"))
         }
     }
 
-    pub fn unsubscribe(&mut self, key: T, bot: &ActiveBot, room: &str) {
+    pub fn unsubscribe(&mut self, key: T, room: &str) -> Result<String, String> {
         if let Ok(mut subscriptions) = self.subscriptions.lock() {
             if !subscriptions.contains_key(&key) {
-                return;
+                return Ok(format!("Was not subscribed to {}", key));
             }
             subscriptions
                 .get_mut(&key)
@@ -125,47 +123,48 @@ where
                 subscriptions.remove(&key);
             }
 
-            println!(
-                "Unsubscribing room {} to {} on {}",
-                room, key, &self.server_details.domain
-            );
-
-            bot.send_message(
-                &format!(
-                    "Unsubscribing to {} on {}",
-                    key, &self.server_details.domain
-                ),
-                room,
-                MessageType::TextMessage,
-            );
+            Ok(format!(
+                "Unsubscribing room from {} on {}",
+                key, &self.server_details.domain
+            ))
         } else {
-            println!("subscriptions not lockable");
-            bot.send_message(
-                "Sorry, I could not remove your subscription, due to an internal error.",
-                room,
-                MessageType::TextMessage,
-            );
+            Err(format!("Sorry, I could not remove your request {} on {} from the subscriptions, due to an internal error ({}).",
+                key, &self.server_details.domain, "subscriptions not lockable"))
         }
+    }
+
+    pub fn scan_line(&self, line: &str) -> ScanLineResult {
+        let prefix = self.prefix.as_deref().unwrap_or("");
+        if !line.starts_with(prefix) {
+            return ScanLineResult::NotForMe;
+        }
+        // Stripping away the prefix
+        let line = line[prefix.len()..].trim();
+
+        if line == format!("list {}s", self.subtype) {
+            return ScanLineResult::ListCommand;
+        }
+
+        let search_url = format!("{}/{}/", self.server_details.domain, self.subtype);
+        // Check if its for me
+        if !line.contains(&search_url) {
+            return ScanLineResult::NotForMe;
+        }
+
+        return ScanLineResult::PossiblyForMe;
     }
 
     pub fn handle_message_helper(&mut self, bot: &ActiveBot, message: &str, room: &str) {
         for line in message.lines() {
-            let prefix = self.prefix.as_deref().unwrap_or("");
-            if !line.starts_with(prefix) {
-                continue;
-            }
-            // Stripping away the prefix
-            let line = line[prefix.len()..].trim();
-
-            if line == format!("list {}s", self.subtype) {
-                self.list_keys(bot, room);
-                continue;
-            }
-
-            let search_url = format!("{}/{}/", self.server_details.domain, self.subtype);
-            // Check if its for me
-            if !line.contains(&search_url) {
-                continue;
+            match self.scan_line(line) {
+                ScanLineResult::PossiblyForMe => { /* Continue below */ }
+                ScanLineResult::NotForMe => {
+                    continue;
+                }
+                ScanLineResult::ListCommand => {
+                    self.list_keys(bot, room);
+                    continue;
+                }
             }
 
             let key = match T::try_from(line.to_string()) {
@@ -181,10 +180,19 @@ where
                 }
             };
 
-            if line.starts_with("unsub") {
-                self.unsubscribe(key, bot, room);
+            let result = if line.starts_with("unsub") {
+                self.unsubscribe(key, room)
             } else {
-                self.subscribe(key, bot, room);
+                self.subscribe(key, room)
+            };
+
+            match result {
+                // We just send the result-message no matter Ok/Err, but this might
+                // change in the future
+                Ok(message) | Err(message) => {
+                    println!("{}", message);
+                    bot.send_message(&message, room, MessageType::TextMessage)
+                }
             }
         }
     }
