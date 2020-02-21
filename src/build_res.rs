@@ -184,6 +184,10 @@ impl Subscriber<PackageKey> {
 impl ConsumerDelegate for Subscriber<PackageKey> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
+            let _ = self
+                .channel
+                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                .wait();
             match self.delivery_wrapper(delivery) {
                 Ok(_) => {}
                 Err(x) => println!("Error while getting Event: {:?}. Skipping to continue", x),
