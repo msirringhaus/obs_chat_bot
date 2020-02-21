@@ -1,4 +1,7 @@
 
+# Update to 0.4
+ * ACK rabbitMQ messages
+
 # Update to 0.3
  * Added example-config
  * Code cleanup
