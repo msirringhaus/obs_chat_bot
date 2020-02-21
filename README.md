@@ -20,6 +20,12 @@ give it directly a config-file with `cargo run -- YOURCONFIG.toml`
 
 Go to https://build.opensuse.org/package/show/home:MSirringhaus/obs_chat_bot and either add it as a repository or download the RPM directly.
 
+After intall, start the bot simply with `obs_chat_bot`
+
+or
+
+give it directly a config-file with `obs_chat_bot YOURCONFIG.toml`
+
 ## Usage
 Invite your bot into any room (be it 1:1 or group-chat).
 
