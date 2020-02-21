@@ -17,6 +17,17 @@ const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
 const KEY_REQUEST_DELETE: &str = "obs.request.delete";
 const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
 
+#[derive(Debug, Clone, std::cmp::PartialEq, std::cmp::Eq, Hash)]
+struct RequestKey {
+    id: String,
+}
+
+impl std::fmt::Display for RequestKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.id)
+    }
+}
+
 pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
     let without_prefix = [
         (
@@ -51,13 +62,14 @@ struct SubmitRequestInfo {
     oldstate: Option<String>,
 }
 
-fn keyparser(parts: &[&str]) -> String {
+fn keyparser(parts: &[&str]) -> RequestKey {
     let mut iter = parts.iter().rev();
     // These unwraps cannot fail, as there have to be at least 2 parts
-    iter.next().unwrap().trim().to_string()
+    let id = iter.next().unwrap().trim().to_string();
+    RequestKey { id }
 }
 
-impl MessageHandler for Subscriber<String> {
+impl MessageHandler for Subscriber<RequestKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
         self.handle_message_helper(bot, &message.body, &message.room, 3, keyparser);
@@ -65,7 +77,7 @@ impl MessageHandler for Subscriber<String> {
     }
 }
 
-impl Subscriber<String> {
+impl Subscriber<RequestKey> {
     fn generate_messages(&self, jsondata: SubmitRequestInfo, changetype: &str) -> (String, String) {
         let mut commentfield = String::new();
         if changetype == "commented" {
@@ -124,7 +136,9 @@ impl Subscriber<String> {
             ));
         }
 
-        let key = format!("{}", jsondata.number);
+        let key = RequestKey {
+            id: format!("{}", jsondata.number),
+        };
 
         let rooms;
         if let Ok(subscriptions) = self.subscriptions.lock() {
@@ -155,7 +169,7 @@ impl Subscriber<String> {
     }
 }
 
-impl ConsumerDelegate for Subscriber<String> {
+impl ConsumerDelegate for Subscriber<RequestKey> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
             match self.delivery_wrapper(delivery) {
@@ -183,7 +197,7 @@ pub fn subscribe(
     ];
     let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let activebot = bot.get_activebot_clone();
-    let mut sub: Subscriber<String> = Subscriber {
+    let mut sub: Subscriber<RequestKey> = Subscriber {
         subtype: "request".to_string(),
         server_details: *details,
         channel,
