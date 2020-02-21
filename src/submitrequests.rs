@@ -216,7 +216,7 @@ pub fn subscribe(
         subtype: "request".to_string(),
         server_details: *details,
         channel,
-        bot: Arc::new(Mutex::new(activebot.clone())),
+        bot: Arc::new(Mutex::new(activebot)),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
         prefix,
     };
@@ -225,7 +225,7 @@ pub fn subscribe(
         None => {}
         Some(subs) => {
             for (room, url) in subs {
-                sub.handle_message_helper(&activebot, &url, &room);
+                sub.subscribe_to_defaults(&url, &room);
             }
         }
     }

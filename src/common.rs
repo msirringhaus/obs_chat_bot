@@ -151,7 +151,7 @@ where
             return ScanLineResult::NotForMe;
         }
 
-        return ScanLineResult::PossiblyForMe;
+        ScanLineResult::PossiblyForMe
     }
 
     pub fn handle_message_helper(&mut self, bot: &ActiveBot, message: &str, room: &str) {
@@ -192,6 +192,39 @@ where
                 Ok(message) | Err(message) => {
                     println!("{}", message);
                     bot.send_message(&message, room, MessageType::TextMessage)
+                }
+            }
+        }
+    }
+
+    pub fn subscribe_to_defaults(&mut self, message: &str, room: &str) {
+        for line in message.lines() {
+            match self.scan_line(line) {
+                ScanLineResult::PossiblyForMe => { /* Continue below */ }
+                ScanLineResult::NotForMe | ScanLineResult::ListCommand => {
+                    continue;
+                }
+            }
+
+            let key = match T::try_from(line.to_string()) {
+                Ok(x) => x,
+                Err(_) => {
+                    println!("Message {} not parsable", line);
+                    continue;
+                }
+            };
+
+            let result = if !line.starts_with("unsub") {
+                self.subscribe(key, room)
+            } else {
+                continue;
+            };
+
+            match result {
+                // We just print the result-message no matter Ok/Err, but this might
+                // change in the future
+                Ok(message) | Err(message) => {
+                    println!("{}", message);
                 }
             }
         }
