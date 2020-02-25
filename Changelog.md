@@ -1,4 +1,7 @@
 
+# Update to 0.4.1
+ * Fix bug where some events where ACK-ed twice, which could cause connection problems
+
 # Update to 0.4
  * ACK rabbitMQ messages
 
