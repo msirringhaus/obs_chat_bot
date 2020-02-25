@@ -173,10 +173,6 @@ impl Subscriber<PackageKey> {
             }
         }
 
-        self.channel
-            .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
-            .wait()?;
-
         Ok(())
     }
 }
@@ -193,7 +189,10 @@ impl ConsumerDelegate for Subscriber<PackageKey> {
                 Err(x) => println!("Error while getting Event: {:?}. Skipping to continue", x),
             }
         } else {
-            println!("Delivery not ok");
+            println!(
+                "Delivery not ok on {}: {:?}",
+                self.server_details.domain, delivery
+            );
         }
     }
 }
