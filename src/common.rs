@@ -39,9 +39,15 @@ where
     T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display + TryFrom<String>,
 {
     pub fn get_base_url(&self) -> String {
+        let tail = if self.server_details.buildprefix == "openqa" {
+            String::new()
+        } else {
+            "/show".to_string()
+        };
+
         format!(
-            "https://{}.{}/{}/show",
-            self.server_details.buildprefix, self.server_details.domain, self.subtype
+            "https://{}.{}/{}{}",
+            self.server_details.buildprefix, self.server_details.domain, self.subtype, tail
         )
     }
 
@@ -141,7 +147,7 @@ where
         // Stripping away the prefix
         let line = line[prefix.len()..].trim();
 
-        if line == format!("list {}s", self.subtype) {
+        if line.starts_with(&format!("list {}", self.subtype)) {
             return ScanLineResult::ListCommand;
         }
 

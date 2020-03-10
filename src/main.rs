@@ -2,6 +2,7 @@ mod build_res;
 mod common;
 mod help;
 mod leave;
+mod openqa;
 mod submitrequests;
 
 use anyhow::{anyhow, Result};
@@ -106,6 +107,10 @@ fn main() -> Result<()> {
         // Subscribe to request-changes
         let channel = conn.create_channel().wait()?;
         submitrequests::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
+
+        // Subscribe to openQA-changes (module will modify buildprefix to openqa)
+        let channel = conn.create_channel().wait()?;
+        openqa::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
     }
 
     // Blocking call until shutdown is issued

@@ -1,5 +1,6 @@
 use crate::build_res;
 use crate::leave;
+use crate::openqa;
 use crate::submitrequests;
 
 use matrix_bot_api::handlers::{extract_command, HandleResult, MessageHandler};
@@ -24,6 +25,7 @@ impl MessageHandler for HelpHandler {
         items.append(&mut leave::help_str(self.prefix.as_deref()));
         items.append(&mut build_res::help_str(self.prefix.as_deref()));
         items.append(&mut submitrequests::help_str(self.prefix.as_deref()));
+        items.append(&mut openqa::help_str(self.prefix.as_deref()));
 
         let mut plainmsg = "Hi, I'm a friendly robot and provide these options:".to_string();
         for (key, text) in &items {
