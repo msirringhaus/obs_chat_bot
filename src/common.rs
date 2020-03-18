@@ -1,5 +1,5 @@
-use anyhow::Result;
-use lapin::{options::*, types::FieldTable, Channel, Consumer, ExchangeKind};
+use anyhow::{anyhow, Result};
+use lapin::{options::*, types::FieldTable, Channel, Connection, Consumer, ExchangeKind};
 use matrix_bot_api::{ActiveBot, MessageType};
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
@@ -20,8 +20,10 @@ where
     T: Send + Clone + std::hash::Hash + std::cmp::Eq + core::fmt::Display + TryFrom<String>,
 {
     pub server_details: ConnectionDetails,
-    pub channel: Channel,
+    pub connection: Connection,
+    pub channel: Option<Channel>,
     pub bot: Arc<Mutex<ActiveBot>>,
+    pub subnames: Vec<&'static str>,
     pub subscriptions: Arc<Mutex<HashMap<T, HashSet<String>>>>,
     pub prefix: Option<String>,
     pub subtype: String,
@@ -32,6 +34,12 @@ pub enum ScanLineResult {
     NotForMe,
     ListCommand,
     PossiblyForMe,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum MessageParseResult {
+    NothingForMe,
+    SomethingForMe,
 }
 
 impl<T> Subscriber<T>
@@ -160,7 +168,13 @@ where
         ScanLineResult::PossiblyForMe
     }
 
-    pub fn handle_message_helper(&mut self, bot: &ActiveBot, message: &str, room: &str) {
+    pub fn handle_message_helper(
+        &mut self,
+        bot: &ActiveBot,
+        message: &str,
+        room: &str,
+    ) -> MessageParseResult {
+        let mut res = MessageParseResult::NothingForMe;
         for line in message.lines() {
             match self.scan_line(line) {
                 ScanLineResult::PossiblyForMe => { /* Continue below */ }
@@ -189,6 +203,7 @@ where
             let result = if line.starts_with("unsub") {
                 self.unsubscribe(key, room)
             } else {
+                res = MessageParseResult::SomethingForMe;
                 self.subscribe(key, room)
             };
 
@@ -201,6 +216,7 @@ where
                 }
             }
         }
+        res
     }
 
     pub fn subscribe_to_defaults(&mut self, message: &str, room: &str) {
@@ -235,60 +251,62 @@ where
             }
         }
     }
-}
 
-pub fn subscribe(
-    details: &ConnectionDetails,
-    channel: Channel,
-    subnames: &[&str],
-) -> Result<(Channel, Consumer)> {
-    channel
-        .exchange_declare(
-            "pubsub",
-            ExchangeKind::Topic,
-            ExchangeDeclareOptions {
-                passive: true,
-                durable: true,
-                auto_delete: true, // deactivate me to survive bot reboots
-                internal: false,
-                nowait: false,
-            },
-            FieldTable::default(),
-        )
-        .wait()?;
+    pub fn register(&mut self) -> Result<Consumer> {
+        if self.channel.is_some() {
+            Err(anyhow!("Was already registered!"))
+        } else {
+            let channel = self.connection.create_channel().wait()?;
 
-    let queue = channel
-        .queue_declare("", QueueDeclareOptions::default(), FieldTable::default())
-        .wait()?;
+            channel
+                .exchange_declare(
+                    "pubsub",
+                    ExchangeKind::Topic,
+                    ExchangeDeclareOptions {
+                        passive: true,
+                        durable: true,
+                        auto_delete: true, // deactivate me to survive bot reboots
+                        internal: false,
+                        nowait: false,
+                    },
+                    FieldTable::default(),
+                )
+                .wait()?;
 
-    for key in subnames.iter() {
-        channel
-            .queue_bind(
-                &queue.name().to_string(),
-                "pubsub",
-                &format!("{}.{}", details.rabbitscope, key),
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
-            .wait()?;
+            let queue = channel
+                .queue_declare("", QueueDeclareOptions::default(), FieldTable::default())
+                .wait()?;
+
+            for key in self.subnames.iter() {
+                channel
+                    .queue_bind(
+                        &queue.name().to_string(),
+                        "pubsub",
+                        &format!("{}.{}", self.server_details.rabbitscope, key),
+                        QueueBindOptions::default(),
+                        FieldTable::default(),
+                    )
+                    .wait()?;
+            }
+
+            let consumer = channel
+                .basic_consume(
+                    &queue,
+                    "OBS_bot_consumer",
+                    BasicConsumeOptions::default(),
+                    FieldTable::default(),
+                )
+                .wait()?;
+
+            println!(
+                "Subscribing to ({}) on {}",
+                self.subnames.join(", "),
+                self.server_details.domain
+            );
+            self.channel = Some(channel);
+            Ok(consumer)
+        }
     }
-
-    let consumer = channel
-        .basic_consume(
-            &queue,
-            "OBS_bot_consumer",
-            BasicConsumeOptions::default(),
-            FieldTable::default(),
-        )
-        .wait()?;
-
-    println!(
-        "Subscribing to ({}) on {}",
-        subnames.join(", "),
-        details.domain
-    );
-
-    Ok((channel, consumer))
 }
 
 pub fn prepend_prefix(

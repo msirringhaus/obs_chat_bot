@@ -97,20 +97,34 @@ fn main() -> Result<()> {
         );
 
         let conn = Connection::connect(&addr, ConnectionProperties::default()).wait()?;
-
         println!("CONNECTED TO {}", &addr);
 
         // Subscribe to build_success/build_fails
-        let channel = conn.create_channel().wait()?;
-        build_res::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
+        build_res::init(
+            &mut bot,
+            details,
+            conn.clone(),
+            prefix.clone(),
+            &default_subs,
+        )?;
 
         // Subscribe to request-changes
-        let channel = conn.create_channel().wait()?;
-        submitrequests::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
+        submitrequests::init(
+            &mut bot,
+            details,
+            conn.clone(),
+            prefix.clone(),
+            &default_subs,
+        )?;
 
         // Subscribe to openQA-changes (module will modify buildprefix to openqa)
-        let channel = conn.create_channel().wait()?;
-        openqa::subscribe(&mut bot, details, channel, prefix.clone(), &default_subs)?;
+        openqa::init(
+            &mut bot,
+            details,
+            conn.clone(),
+            prefix.clone(),
+            &default_subs,
+        )?;
     }
 
     // Blocking call until shutdown is issued

@@ -1,9 +1,9 @@
-use crate::common::{prepend_prefix, ConnectionDetails, Subscriber};
+use crate::common::{prepend_prefix, ConnectionDetails, MessageParseResult, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
     options::*,
-    Channel, ConsumerDelegate,
+    Connection, ConsumerDelegate,
 };
 use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 
 const KEY_BUILD_SUCCESS: &str = "obs.package.build_success";
 const KEY_BUILD_FAIL: &str = "obs.package.build_fail";
+const SUBNAMES: [&str; 2] = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
 
 pub fn help_str(prefix: Option<&str>) -> Vec<(String, String)> {
     let without_prefix = [
@@ -94,8 +95,16 @@ struct BuildSuccessInfo {
 impl MessageHandler for Subscriber<PackageKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        self.handle_message_helper(bot, &message.body, &message.room);
+        let res = self.handle_message_helper(bot, &message.body, &message.room);
 
+        if res == MessageParseResult::SomethingForMe {
+            match self.register() {
+                Err(x) => {
+                    println!("Error while registering: {:?}", x);
+                }
+                Ok(consumer) => consumer.set_delegate(Box::new(self.clone())),
+            }
+        }
         HandleResult::ContinueHandling
     }
 }
@@ -180,10 +189,11 @@ impl Subscriber<PackageKey> {
 impl ConsumerDelegate for Subscriber<PackageKey> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
-            let _ = self
-                .channel
-                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
-                .wait();
+            if let Some(channel) = &self.channel {
+                let _ = channel
+                    .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                    .wait();
+            }
             match self.delivery_wrapper(delivery) {
                 Ok(_) => {}
                 Err(x) => println!("Error while getting Event: {:?}. Skipping to continue", x),
@@ -197,20 +207,20 @@ impl ConsumerDelegate for Subscriber<PackageKey> {
     }
 }
 
-pub fn subscribe(
+pub fn init(
     bot: &mut MatrixBot,
     details: &ConnectionDetails,
-    channel: Channel,
+    conn: Connection,
     prefix: Option<String>,
     default_subs: &Option<Vec<(String, String)>>,
 ) -> Result<()> {
-    let subnames = [KEY_BUILD_SUCCESS, KEY_BUILD_FAIL];
-    let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let activebot = bot.get_activebot_clone();
     let mut sub: Subscriber<PackageKey> = Subscriber {
         subtype: "package".to_string(),
         server_details: *details,
-        channel,
+        connection: conn,
+        channel: None,
+        subnames: SUBNAMES.to_vec(),
         bot: Arc::new(Mutex::new(activebot)),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
         prefix,
@@ -218,15 +228,17 @@ pub fn subscribe(
 
     match default_subs {
         None => {}
-        Some(subs) => {
-            for (room, url) in subs {
-                sub.subscribe_to_defaults(&url, &room);
+        Some(subs) => match sub.register() {
+            Err(_) => {}
+            Ok(consumer) => {
+                consumer.set_delegate(Box::new(sub.clone()));
+                for (room, url) in subs {
+                    sub.subscribe_to_defaults(&url, &room);
+                }
             }
-        }
+        },
     }
-
-    bot.add_handler(sub.clone());
-    consumer.set_delegate(Box::new(sub));
+    bot.add_handler(sub);
 
     Ok(())
 }

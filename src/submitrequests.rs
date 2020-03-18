@@ -1,9 +1,9 @@
-use crate::common::{prepend_prefix, ConnectionDetails, Subscriber};
+use crate::common::{prepend_prefix, ConnectionDetails, MessageParseResult, Subscriber};
 use anyhow::{anyhow, Result};
 use lapin::{
     message::{Delivery, DeliveryResult},
     options::*,
-    Channel, ConsumerDelegate,
+    Connection, ConsumerDelegate,
 };
 use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
@@ -17,6 +17,12 @@ const KEY_REQUEST_CHANGE: &str = "obs.request.change";
 const KEY_REQUEST_STATECHANGE: &str = "obs.request.state_change";
 const KEY_REQUEST_DELETE: &str = "obs.request.delete";
 const KEY_REQUEST_COMMENT: &str = "obs.request.comment";
+const SUBNAMES: [&str; 4] = [
+    KEY_REQUEST_CHANGE,
+    KEY_REQUEST_STATECHANGE,
+    KEY_REQUEST_DELETE,
+    KEY_REQUEST_COMMENT,
+];
 
 #[derive(Debug, Clone, std::cmp::PartialEq, std::cmp::Eq, Hash)]
 struct RequestKey {
@@ -87,7 +93,16 @@ struct SubmitRequestInfo {
 impl MessageHandler for Subscriber<RequestKey> {
     /// Will be called for every text message send to a room the bot is in
     fn handle_message(&mut self, bot: &ActiveBot, message: &Message) -> HandleResult {
-        self.handle_message_helper(bot, &message.body, &message.room);
+        let res = self.handle_message_helper(bot, &message.body, &message.room);
+
+        if res == MessageParseResult::SomethingForMe {
+            match self.register() {
+                Err(x) => {
+                    println!("Error while registering: {:?}", x);
+                }
+                Ok(consumer) => consumer.set_delegate(Box::new(self.clone())),
+            }
+        }
         HandleResult::ContinueHandling
     }
 }
@@ -183,10 +198,11 @@ impl Subscriber<RequestKey> {
 impl ConsumerDelegate for Subscriber<RequestKey> {
     fn on_new_delivery(&self, delivery: DeliveryResult) {
         if let Ok(Some(delivery)) = delivery {
-            let _ = self
-                .channel
-                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
-                .wait();
+            if let Some(channel) = &self.channel {
+                let _ = channel
+                    .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                    .wait();
+            }
             match self.delivery_wrapper(delivery) {
                 Ok(_) => {}
                 Err(x) => println!("Error while getting Event: {:?}. Skipping to continue", x),
@@ -200,25 +216,20 @@ impl ConsumerDelegate for Subscriber<RequestKey> {
     }
 }
 
-pub fn subscribe(
+pub fn init(
     bot: &mut MatrixBot,
     details: &ConnectionDetails,
-    channel: Channel,
+    conn: Connection,
     prefix: Option<String>,
     default_subs: &Option<Vec<(String, String)>>,
 ) -> Result<()> {
-    let subnames = [
-        KEY_REQUEST_CHANGE,
-        KEY_REQUEST_STATECHANGE,
-        KEY_REQUEST_DELETE,
-        KEY_REQUEST_COMMENT,
-    ];
-    let (channel, consumer) = crate::common::subscribe(details, channel, &subnames)?;
     let activebot = bot.get_activebot_clone();
     let mut sub: Subscriber<RequestKey> = Subscriber {
         subtype: "request".to_string(),
         server_details: *details,
-        channel,
+        connection: conn,
+        channel: None,
+        subnames: SUBNAMES.to_vec(),
         bot: Arc::new(Mutex::new(activebot)),
         subscriptions: Arc::new(Mutex::new(HashMap::new())),
         prefix,
@@ -226,14 +237,17 @@ pub fn subscribe(
 
     match default_subs {
         None => {}
-        Some(subs) => {
-            for (room, url) in subs {
-                sub.subscribe_to_defaults(&url, &room);
+        Some(subs) => match sub.register() {
+            Err(_) => {}
+            Ok(consumer) => {
+                consumer.set_delegate(Box::new(sub.clone()));
+                for (room, url) in subs {
+                    sub.subscribe_to_defaults(&url, &room);
+                }
             }
-        }
+        },
     }
-    bot.add_handler(sub.clone());
-    consumer.set_delegate(Box::new(sub));
+    bot.add_handler(sub);
 
     Ok(())
 }
