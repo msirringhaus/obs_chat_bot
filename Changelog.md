@@ -1,3 +1,6 @@
+# Update to 0.5
+ * Add feature to listen for openQA events
+ * Only subscribe to anything upstream, if user requests something
 
 # Update to 0.4.1
  * Fix bug where some events where ACK-ed twice, which could cause connection problems
