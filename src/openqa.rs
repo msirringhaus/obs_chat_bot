@@ -8,7 +8,6 @@ use lapin::{
 use matrix_bot_api::handlers::{HandleResult, MessageHandler};
 use matrix_bot_api::{ActiveBot, MatrixBot, Message, MessageType};
 use serde::Deserialize;
-use serde_json;
 use std::collections::hash_map::HashMap;
 use std::convert::TryFrom;
 use std::sync::{Arc, Mutex};
