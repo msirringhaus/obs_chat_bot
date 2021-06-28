@@ -7,11 +7,9 @@ mod submitrequests;
 
 use anyhow::{anyhow, Result};
 use common::ConnectionDetails;
-use config;
 use help::HelpHandler;
 use matrix_bot_api::MatrixBot;
 use std::env::args;
-use xdg;
 
 use lapin::{Connection, ConnectionProperties};
 
